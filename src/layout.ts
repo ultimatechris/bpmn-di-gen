@@ -335,6 +335,25 @@ function placeBoundaryEvents(graph: ProcessGraph): void {
   }
 }
 
+const GROUP_PADDING = 20;
+
+function placeGroups(graph: ProcessGraph): void {
+  const boundsById = new Map<string, Bounds>();
+  for (const node of graph.nodes) { if (node.bounds) boundsById.set(node.id, node.bounds); }
+
+  for (const group of graph.groups) {
+    const memberBounds = (group.memberNodeIds.length
+      ? group.memberNodeIds.map((id) => boundsById.get(id)).filter((b): b is Bounds => !!b)
+      : [...boundsById.values()]);
+    if (!memberBounds.length) continue;
+    const left = Math.min(...memberBounds.map((b) => b.x)) - GROUP_PADDING;
+    const top = Math.min(...memberBounds.map((b) => b.y)) - GROUP_PADDING;
+    const right = Math.max(...memberBounds.map((b) => b.x + b.width)) + GROUP_PADDING;
+    const bottom = Math.max(...memberBounds.map((b) => b.y + b.height)) + GROUP_PADDING;
+    group.bounds = { x: left, y: top, width: right - left, height: bottom - top };
+  }
+}
+
 function applyTopToBottom(model: LayoutModel): void {
   for (const graph of model.graphs) {
     for (const node of graph.nodes) node.bounds = transposeBounds(node.bounds!);
@@ -393,5 +412,6 @@ export function layoutModel(model: LayoutModel, options: LayoutOptions): void {
     placeDataElements(graph, spacing);
     routeAssociations(graph);
     routeDataAssociations(graph);
+    placeGroups(graph);
   }
 }

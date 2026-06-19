@@ -6,6 +6,7 @@ import type {
   LayoutDataAssociation,
   LayoutDataElement,
   LayoutEdge,
+  LayoutGroup,
   LayoutLane,
   LayoutModel,
   LayoutNode,
@@ -147,8 +148,10 @@ function buildGraph(process: any, participant: LayoutParticipant | undefined, di
       });
     }
   }
+  const rawNodeIds = new Set<string>(flowElements.filter(isFlowNode).map((el: any) => el.id));
   const annotations: LayoutAnnotation[] = [];
   const associations: LayoutAssociation[] = [];
+  const groups: LayoutGroup[] = [];
   for (const artifact of process.artifacts ?? []) {
     if (isType(artifact, 'TextAnnotation')) {
       annotations.push({ id: artifact.id, element: artifact, width: 120, height: 60 });
@@ -165,6 +168,15 @@ function buildGraph(process: any, participant: LayoutParticipant | undefined, di
           elementId: artifact.id,
         });
       }
+    } else if (isType(artifact, 'Group')) {
+      const groupCv = artifact.categoryValueRef;
+      const memberNodeIds: string[] = groupCv
+        ? flowElements
+            .filter((el: any) => rawNodeIds.has(el.id) && Array.isArray(el.categoryValueRef)
+              && el.categoryValueRef.some((cv: any) => cv === groupCv || cv.id === groupCv?.id))
+            .map((el: any) => el.id)
+        : [];
+      groups.push({ id: artifact.id, element: artifact, memberNodeIds });
     } else {
       diagnostics.push({
         severity: 'warning',
@@ -232,7 +244,7 @@ function buildGraph(process: any, participant: LayoutParticipant | undefined, di
   if (lanes.length) assignLaneMembership(nodes, lanes, diagnostics);
   const incoming = new Set(edges.filter((e) => nodeIds.has(e.targetId)).map((e) => e.targetId));
   const roots = nodes.filter((node) => !incoming.has(node.id)).map((node) => node.id);
-  return { process, participant, nodes, edges, lanes, roots, width: 0, height: 0, participantOrder: 0, boundaryEvents, annotations, associations, dataElements, dataAssociations };
+  return { process, participant, nodes, edges, lanes, roots, width: 0, height: 0, participantOrder: 0, boundaryEvents, annotations, associations, dataElements, dataAssociations, groups };
 }
 
 export function analyzeDefinitions(definitions: any): LayoutModel {

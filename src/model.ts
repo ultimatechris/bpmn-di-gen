@@ -101,6 +101,14 @@ export interface ProcessGraph {
   associations: LayoutAssociation[];
   dataElements: LayoutDataElement[];
   dataAssociations: LayoutDataAssociation[];
+  groups: LayoutGroup[];
+}
+
+export interface LayoutGroup {
+  id: string;
+  element: any;
+  memberNodeIds: string[];
+  bounds?: Bounds;
 }
 
 export interface LayoutModel {

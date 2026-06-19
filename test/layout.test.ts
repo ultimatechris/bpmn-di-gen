@@ -304,6 +304,35 @@ describe('data elements', () => {
   });
 });
 
+describe('groups', () => {
+  it('generates a shape for a group artifact encompassing process content', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        id="Def_Group" targetNamespace="http://example.com">
+        <bpmn:process id="Proc_Group">
+          <bpmn:startEvent id="Start_G" />
+          <bpmn:task id="Task_G" name="Do work" />
+          <bpmn:endEvent id="End_G" />
+          <bpmn:sequenceFlow id="SF_G1" sourceRef="Start_G" targetRef="Task_G" />
+          <bpmn:sequenceFlow id="SF_G2" sourceRef="Task_G" targetRef="End_G" />
+          <bpmn:group id="Group1" />
+        </bpmn:process>
+      </bpmn:definitions>`;
+    const result = await layoutBpmn(xml);
+    expect(result.diagnostics.filter((d) => d.code === 'UNSUPPORTED_ELEMENT')).toHaveLength(0);
+    const definitions = await parse(result.xml);
+    const shapes = shapeMap(definitions);
+    expect(shapes.has('Group1')).toBe(true);
+    const groupBounds = shapes.get('Group1').bounds;
+    expect(groupBounds.width).toBeGreaterThan(0);
+    expect(groupBounds.height).toBeGreaterThan(0);
+    // Group must encompass all node shapes
+    for (const nodeId of ['Start_G', 'Task_G', 'End_G']) {
+      expect(inside(shapes.get(nodeId).bounds, groupBounds)).toBe(true);
+    }
+  });
+});
+
 describe('lane-aware layout', () => {
   it('places every flow node in its semantic lane and sizes the participant', async () => {
     const result = await layoutBpmn(await fixture('lanes.bpmn'));

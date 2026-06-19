@@ -67,7 +67,12 @@ export function writeDiagramInterchange(moddle: BpmnModdle, model: LayoutModel, 
       const extra = node.type.endsWith('SubProcess') ? { isExpanded: false } : {};
       addShape(node.element, node.bounds!, extra);
     }
-    for (const edge of graph.edges) addEdge(edge.element, edge.points!);
+    for (const be of graph.boundaryEvents) {
+      if (be.bounds) addShape(be.element, be.bounds, { cancelActivity: true });
+    }
+    for (const edge of graph.edges) {
+      if (edge.points) addEdge(edge.element, edge.points);
+    }
   }
   for (const edge of model.messageEdges) {
     if (edge.points) addEdge(edge.element, edge.points);

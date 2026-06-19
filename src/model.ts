@@ -1,5 +1,15 @@
 import type { Bounds, Diagnostic, Point } from './types.js';
 
+export interface LayoutBoundaryEvent {
+  id: string;
+  type: string;
+  element: any;
+  hostId: string;
+  width: number;
+  height: number;
+  bounds?: Bounds;
+}
+
 export interface LayoutNode {
   id: string;
   type: string;
@@ -50,6 +60,7 @@ export interface ProcessGraph {
   width: number;
   height: number;
   participantOrder: number;
+  boundaryEvents: LayoutBoundaryEvent[];
 }
 
 export interface LayoutModel {

@@ -62,16 +62,15 @@ describe('diagnostics and errors', () => {
     const result = await layoutBpmn(input);
     // Phase 4: black-box participant is handled — UNROUTABLE_MESSAGE_FLOW is gone
     // Boundary event + expanded subprocess still unsupported → UNSUPPORTED_ELEMENT remains
-    const codes = result.diagnostics.map((item) => item.code);
-    expect(codes).toContain('UNSUPPORTED_ELEMENT');
-    expect(codes).toContain('INVALID_SEQUENCE_FLOW'); // Flow_Timeout from boundary event
-    expect(codes).not.toContain('UNROUTABLE_MESSAGE_FLOW');
+    // Phase 5 (boundary events): all elements in this fixture are now handled.
+    // SubProcess_Handle is laid out as a collapsed activity (no internal layout yet).
+    expect(result.diagnostics.filter((d) => d.severity === 'error')).toHaveLength(0);
     for (const id of ['Participant_Customer', 'Message_Request', 'SubProcess_Handle', 'Boundary_Timer', 'SubTask']) {
       expect(result.xml).toContain(`id="${id}"`);
     }
-    // Black-box participant now gets a shape
     const definitions = await parse(result.xml);
     const shapes = shapeMap(definitions);
     expect(shapes.has('Participant_Customer')).toBe(true);
+    expect(shapes.has('Boundary_Timer')).toBe(true);
   });
 });

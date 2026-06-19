@@ -1,5 +1,6 @@
 import { BpmnLayoutError } from './errors.js';
 import type {
+  LayoutBoundaryEvent,
   LayoutEdge,
   LayoutLane,
   LayoutModel,
@@ -98,26 +99,33 @@ function assignLaneMembership(
 
 function buildGraph(process: any, participant: LayoutParticipant | undefined, diagnostics: Diagnostic[]): ProcessGraph {
   const flowElements = process.flowElements ?? [];
+
+  // Collect boundary events first
+  const boundaryEvents: LayoutBoundaryEvent[] = [];
   for (const element of flowElements) {
-    if (isType(element, 'BoundaryEvent')) {
+    if (!isType(element, 'BoundaryEvent')) continue;
+    const hostId = element.attachedToRef?.id;
+    if (!hostId) {
       diagnostics.push({
         severity: 'warning',
         code: 'UNSUPPORTED_ELEMENT',
-        message: `Boundary event ${element.id} is preserved but is not laid out in Phase 3.`,
+        message: `BoundaryEvent ${element.id} has no attachedToRef and will not be laid out.`,
         elementId: element.id,
       });
-    } else if (isType(element, 'SubProcess') && (element.flowElements?.length ?? 0) > 0) {
+      continue;
+    }
+    boundaryEvents.push({ id: element.id, type: element.$type, element, hostId, width: 36, height: 36 });
+  }
+  const boundaryEventIds = new Set(boundaryEvents.map((be) => be.id));
+
+  // Warn about remaining unsupported elements
+  for (const element of flowElements) {
+    if (isType(element, 'BoundaryEvent')) continue;
+    if (!isFlowNode(element) && !isType(element, 'SequenceFlow')) {
       diagnostics.push({
         severity: 'warning',
         code: 'UNSUPPORTED_ELEMENT',
-        message: `Subprocess ${element.id} is preserved and laid out as collapsed; its contents are not laid out.`,
-        elementId: element.id,
-      });
-    } else if (!isFlowNode(element) && !isType(element, 'SequenceFlow')) {
-      diagnostics.push({
-        severity: 'warning',
-        code: 'UNSUPPORTED_ELEMENT',
-        message: `${element.$type ?? 'BPMN element'} ${element.id ?? ''} is preserved but is not laid out in Phase 3.`.trim(),
+        message: `${element.$type ?? 'BPMN element'} ${element.id ?? ''} is preserved but is not laid out.`.trim(),
         elementId: element.id,
       });
     }
@@ -126,50 +134,41 @@ function buildGraph(process: any, participant: LayoutParticipant | undefined, di
     diagnostics.push({
       severity: 'warning',
       code: 'UNSUPPORTED_ELEMENT',
-      message: `${artifact.$type ?? 'BPMN artifact'} ${artifact.id ?? ''} is preserved but is not laid out in Phase 3.`.trim(),
+      message: `${artifact.$type ?? 'BPMN artifact'} ${artifact.id ?? ''} is preserved but is not laid out.`.trim(),
       elementId: artifact.id,
     });
   }
+
   const nodes: LayoutNode[] = flowElements.filter(isFlowNode).map((element: any, order: number) => {
     const size = dimensions(element.$type);
-    return {
-      id: element.id,
-      type: element.$type,
-      element,
-      width: size.width,
-      height: size.height,
-      rank: 0,
-      order,
-    };
+    return { id: element.id, type: element.$type, element, width: size.width, height: size.height, rank: 0, order };
   });
   const nodeIds = new Set(nodes.map((node) => node.id));
-  const edges: LayoutEdge[] = flowElements.filter((element: any) => isType(element, 'SequenceFlow')).flatMap((element: any) => {
-    const sourceId = element.sourceRef?.id;
-    const targetId = element.targetRef?.id;
-    if (!sourceId || !targetId || !nodeIds.has(sourceId) || !nodeIds.has(targetId)) {
-      diagnostics.push({
-        severity: 'error',
-        code: 'INVALID_SEQUENCE_FLOW',
-        message: `Sequence flow ${element.id} has an unresolved or unsupported endpoint.`,
-        elementId: element.id,
-      });
-      return [];
-    }
-    return [{
-      id: element.id,
-      type: 'sequence' as const,
-      element,
-      sourceId,
-      targetId,
-      backward: false,
-    }];
-  });
+  const validEndpoints = new Set([...nodeIds, ...boundaryEventIds]);
+
+  const edges: LayoutEdge[] = flowElements
+    .filter((element: any) => isType(element, 'SequenceFlow'))
+    .flatMap((element: any) => {
+      const sourceId = element.sourceRef?.id;
+      const targetId = element.targetRef?.id;
+      if (!sourceId || !targetId || !validEndpoints.has(sourceId) || !validEndpoints.has(targetId)) {
+        diagnostics.push({
+          severity: 'error',
+          code: 'INVALID_SEQUENCE_FLOW',
+          message: `Sequence flow ${element.id} has an unresolved or unsupported endpoint.`,
+          elementId: element.id,
+        });
+        return [];
+      }
+      return [{ id: element.id, type: 'sequence' as const, element, sourceId, targetId, backward: false }];
+    });
+
   const lanes: LayoutLane[] = [];
   collectLanes(process.laneSets, undefined, 0, lanes);
   if (lanes.length) assignLaneMembership(nodes, lanes, diagnostics);
-  const incoming = new Set(edges.map((edge) => edge.targetId));
+  const incoming = new Set(edges.filter((e) => nodeIds.has(e.targetId)).map((e) => e.targetId));
   const roots = nodes.filter((node) => !incoming.has(node.id)).map((node) => node.id);
-  return { process, participant, nodes, edges, lanes, roots, width: 0, height: 0, participantOrder: 0 };
+  return { process, participant, nodes, edges, lanes, roots, width: 0, height: 0, participantOrder: 0, boundaryEvents };
 }
 
 export function analyzeDefinitions(definitions: any): LayoutModel {

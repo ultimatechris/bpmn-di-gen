@@ -37,7 +37,9 @@ function columnWidth(nodes: LayoutNode[]): number {
 }
 
 function layoutGraph(graph: ProcessGraph, x: number, y: number, spacing: Spacing): void {
-  assignRanks(graph.nodes, graph.edges);
+  const nodeIds = new Set(graph.nodes.map((n) => n.id));
+  const rankEdges = graph.edges.filter((e) => nodeIds.has(e.sourceId) && nodeIds.has(e.targetId));
+  assignRanks(graph.nodes, rankEdges);
   const maxRank = Math.max(0, ...graph.nodes.map((node) => node.rank));
   const stepX = columnWidth(graph.nodes) + spacing.rankGap;
   const contentWidth = maxRank * stepX + columnWidth(graph.nodes) + spacing.paddingX * 2;
@@ -159,15 +161,32 @@ function deduplicate(points: Point[]): Point[] {
 }
 
 function routeSequenceEdges(graph: ProcessGraph): void {
-  const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
+  const boundsById = new Map<string, Bounds>();
+  for (const node of graph.nodes) { if (node.bounds) boundsById.set(node.id, node.bounds); }
+  for (const be of graph.boundaryEvents) { if (be.bounds) boundsById.set(be.id, be.bounds); }
+  const boundaryEventIds = new Set(graph.boundaryEvents.map((be) => be.id));
+
   let backwardChannel = 0;
+  const allBounds = [...boundsById.values()];
   const graphTop = graph.participant?.bounds?.y
     ?? (graph.lanes.length
       ? Math.min(...graph.lanes.map((lane) => lane.bounds!.y))
-      : Math.min(...graph.nodes.map((node) => node.bounds!.y)) - 35);
+      : allBounds.length ? Math.min(...allBounds.map((b) => b.y)) - 35 : 0);
+
   for (const edge of graph.edges) {
-    const source = nodes.get(edge.sourceId)!.bounds!;
-    const target = nodes.get(edge.targetId)!.bounds!;
+    const source = boundsById.get(edge.sourceId);
+    const target = boundsById.get(edge.targetId);
+    if (!source || !target) continue;
+
+    if (boundaryEventIds.has(edge.sourceId)) {
+      // Exception flow: exit from bottom of boundary event, route to target
+      const start = { x: centerX(source), y: source.y + source.height };
+      const end = { x: target.x, y: centerY(target) };
+      const midY = Math.max(start.y + 20, end.y);
+      edge.points = deduplicate([start, { x: start.x, y: midY }, { x: end.x, y: midY }, end]);
+      continue;
+    }
+
     const sourcePoint = { x: source.x + source.width, y: centerY(source) };
     const targetPoint = { x: target.x, y: centerY(target) };
     if (!edge.backward) {
@@ -233,9 +252,24 @@ function transposeBounds(bounds: Bounds): Bounds {
   return { x: bounds.y, y: bounds.x, width: bounds.height, height: bounds.width };
 }
 
+function placeBoundaryEvents(graph: ProcessGraph): void {
+  const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+  for (const be of graph.boundaryEvents) {
+    const host = nodeById.get(be.hostId);
+    if (!host?.bounds) continue;
+    be.bounds = {
+      x: host.bounds.x + host.bounds.width / 2 - be.width / 2,
+      y: host.bounds.y + host.bounds.height - be.height / 2,
+      width: be.width,
+      height: be.height,
+    };
+  }
+}
+
 function applyTopToBottom(model: LayoutModel): void {
   for (const graph of model.graphs) {
     for (const node of graph.nodes) node.bounds = transposeBounds(node.bounds!);
+    for (const be of graph.boundaryEvents) { if (be.bounds) be.bounds = transposeBounds(be.bounds); }
     for (const lane of graph.lanes) lane.bounds = transposeBounds(lane.bounds!);
     if (graph.participant?.bounds) graph.participant.bounds = transposeBounds(graph.participant.bounds);
     [graph.width, graph.height] = [graph.height, graph.width];
@@ -279,6 +313,7 @@ export function layoutModel(model: LayoutModel, options: LayoutOptions): void {
     }
   }
 
+  for (const graph of model.graphs) placeBoundaryEvents(graph);
   if (options.direction === 'top-to-bottom') applyTopToBottom(model);
   for (const graph of model.graphs) routeSequenceEdges(graph);
   routeMessageEdges(model);

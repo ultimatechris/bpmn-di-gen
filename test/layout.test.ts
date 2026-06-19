@@ -209,6 +209,42 @@ describe('multi-pool collaboration', () => {
   });
 });
 
+describe('boundary events', () => {
+  it('places boundary event on host border and routes exception flow', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        id="Def_BE" targetNamespace="http://example.com">
+        <bpmn:process id="Proc_BE">
+          <bpmn:startEvent id="Start_BE" />
+          <bpmn:task id="Task_BE" name="Do work" />
+          <bpmn:endEvent id="End_Normal" />
+          <bpmn:endEvent id="End_Error" />
+          <bpmn:boundaryEvent id="Boundary_Error" attachedToRef="Task_BE">
+            <bpmn:errorEventDefinition />
+          </bpmn:boundaryEvent>
+          <bpmn:sequenceFlow id="SF_BE1" sourceRef="Start_BE" targetRef="Task_BE" />
+          <bpmn:sequenceFlow id="SF_BE2" sourceRef="Task_BE" targetRef="End_Normal" />
+          <bpmn:sequenceFlow id="SF_Exception" sourceRef="Boundary_Error" targetRef="End_Error" />
+        </bpmn:process>
+      </bpmn:definitions>`;
+    const result = await layoutBpmn(xml);
+    expect(result.diagnostics.filter((d) => d.code === 'UNSUPPORTED_ELEMENT')).toHaveLength(0);
+    expect(result.diagnostics.filter((d) => d.code === 'INVALID_SEQUENCE_FLOW')).toHaveLength(0);
+
+    const definitions = await parse(result.xml);
+    const shapes = shapeMap(definitions);
+    expect(shapes.has('Boundary_Error')).toBe(true);
+    const beBounds = shapes.get('Boundary_Error').bounds;
+    const hostBounds = shapes.get('Task_BE').bounds;
+    expect(beBounds.x + beBounds.width / 2).toBeCloseTo(hostBounds.x + hostBounds.width / 2, 0);
+    expect(beBounds.y + beBounds.height / 2).toBeGreaterThanOrEqual(hostBounds.y + hostBounds.height - 5);
+
+    const edges = definitions.diagrams[0].plane.planeElement
+      .filter((e: any) => e.$type === 'bpmndi:BPMNEdge');
+    expect(edges.map((e: any) => e.bpmnElement.id)).toContain('SF_Exception');
+  });
+});
+
 describe('lane-aware layout', () => {
   it('places every flow node in its semantic lane and sizes the participant', async () => {
     const result = await layoutBpmn(await fixture('lanes.bpmn'));

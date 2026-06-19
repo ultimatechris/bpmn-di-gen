@@ -21,6 +21,7 @@ function metrics(model: ReturnType<typeof analyzeDefinitions>): LayoutMetrics {
   const bounds = [
     ...model.graphs.flatMap((graph) => [
       ...graph.nodes.map((node) => node.bounds!),
+      ...graph.boundaryEvents.filter((be) => be.bounds).map((be) => be.bounds!),
       ...graph.lanes.map((lane) => lane.bounds!),
       ...(graph.participant?.bounds ? [graph.participant.bounds] : []),
     ]),

@@ -1,6 +1,6 @@
 # Support Matrix
 
-This matrix describes the Phase 5 implementation.
+This matrix describes the Phase 6 (current) implementation.
 
 | Area | Status | Notes |
 | --- | --- | --- |
@@ -31,7 +31,10 @@ This matrix describes the Phase 5 implementation.
 | Multiple pools | Supported | Stacked vertically in collaboration order |
 | Message flows | Supported | Routed between participant shapes |
 | Explicit label DI | Not supported | Modelers may render default labels |
-| Partial DI completion/repair | Not supported | Replacement only — Phase 6 |
+| DI policy: replace | Supported | Default — discards existing DI and generates fresh |
+| DI policy: complete | Supported | Preserves all existing shape positions; adds DI for new elements |
+| DI policy: repair | Supported | Restores valid existing shapes; re-routes all edges |
+| Element pinning (`pins`) | Supported | Specified element IDs keep their existing DI positions |
 | Left-to-right layout | Supported | Default |
 | Top-to-bottom layout | Supported | Transposes partitions and direction |
 | Spacing presets | Supported | Compact, normal, spacious |

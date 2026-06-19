@@ -2,13 +2,14 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { BpmnLayoutError, layoutBpmn } from './index.js';
-import type { LayoutDirection, LayoutSpacing } from './types.js';
+import type { DiPolicy, LayoutDirection, LayoutSpacing } from './types.js';
 
 interface CliOptions {
   input?: string;
   output?: string;
   direction?: LayoutDirection;
   spacing?: LayoutSpacing;
+  diPolicy?: DiPolicy;
 }
 
 function usage(): string {
@@ -18,6 +19,7 @@ Options:
   -o, --output <file>       Output BPMN file (required)
   --direction <direction>   left-to-right (default) or top-to-bottom
   --spacing <spacing>       compact, normal (default), or spacious
+  --di-policy <policy>      replace (default), complete, or repair
   -h, --help                Show this help`;
 }
 
@@ -34,6 +36,8 @@ function parseArguments(args: string[]): CliOptions {
       options.direction = args[++index] as LayoutDirection;
     } else if (value === '--spacing') {
       options.spacing = args[++index] as LayoutSpacing;
+    } else if (value === '--di-policy') {
+      options.diPolicy = args[++index] as DiPolicy;
     } else if (value.startsWith('-')) {
       throw new Error(`Unknown option: ${value}`);
     } else if (!options.input) {
@@ -50,7 +54,11 @@ async function main(): Promise<void> {
   try {
     const options = parseArguments(process.argv.slice(2));
     const xml = await readFile(options.input!, 'utf8');
-    const result = await layoutBpmn(xml, { direction: options.direction, spacing: options.spacing });
+    const result = await layoutBpmn(xml, {
+      direction: options.direction,
+      spacing: options.spacing,
+      diPolicy: options.diPolicy,
+    });
     await writeFile(options.output!, result.xml, 'utf8');
     process.stderr.write(
       `${basename(options.output!)}: ${result.metrics.shapeCount} shapes, ${result.metrics.edgeCount} edges, `

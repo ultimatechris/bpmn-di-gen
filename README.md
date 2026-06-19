@@ -4,18 +4,31 @@ Generate readable BPMN Diagram Interchange (DI) for BPMN 2.0 XML that has no
 usable layout information. The result is still a portable `.bpmn` file; this
 package is a layout library and CLI, not an image renderer or modeler.
 
-The current implementation covers the project roadmap through Phase 3:
+The implementation covers Phases 3–6 of the project roadmap:
 
-- Loss-aware BPMN parse and serialization
-- Deterministic single-process layered layout
-- Events, activities, gateways, branches, joins, cycles, and disconnected nodes
-- Orthogonal sequence-flow routing
-- Pools with a referenced process
-- Flat, empty, and nested lanes
-- Sequence flows crossing lane boundaries
-- BPMN DI shapes, bounds, edges, and waypoints
-- Left-to-right and top-to-bottom directions
-- Compact, normal, and spacious presets
+**Layout**
+- Deterministic single-process layered layout (events, tasks, gateways, cycles)
+- Orthogonal sequence-flow routing with backward-flow channels
+- Flat, empty, and nested lanes; lane-crossing flows
+- Left-to-right and top-to-bottom directions; compact/normal/spacious presets
+
+**Collaboration**
+- Multiple pools stacked in declaration order
+- Black-box (no-process) participants
+- Message-flow routing between participant shapes
+
+**BPMN Artifacts (Phase 5)**
+- Boundary events placed on host border; exception-flow routing
+- Expanded subprocess contents laid out recursively
+- Text annotations placed beside process content; associations routed
+- Data objects (DataObjectReference) and data stores placed above connected tasks
+- Group artifacts as visual bounding boxes around member nodes
+
+**DI Lifecycle (Phase 6)**
+- `replace` (default): fresh layout; existing DI is discarded
+- `complete`: preserve all existing shape positions; add DI only for new elements
+- `repair`: restore valid existing shape positions; re-route all edges
+- `pins`: keep specified element IDs at their current positions regardless of policy
 
 See [Support Matrix](docs/support-matrix.md) for precise boundaries.
 
@@ -33,11 +46,21 @@ The package requires Node.js 20 or newer.
 ```ts
 import { layoutBpmn } from 'bpmn-di-gen';
 
+// Fresh layout (default)
 const result = await layoutBpmn(inputXml, {
-  direction: 'left-to-right',
-  spacing: 'normal',
-  diPolicy: 'replace',
+  direction: 'left-to-right',  // or 'top-to-bottom'
+  spacing: 'normal',           // 'compact' | 'normal' | 'spacious'
+  diPolicy: 'replace',         // 'replace' | 'complete' | 'repair'
 });
+
+// Preserve existing element positions; only add DI for new elements
+const completed = await layoutBpmn(inputXml, { diPolicy: 'complete' });
+
+// Re-route all edges; restore existing shape positions where valid
+const repaired = await layoutBpmn(inputXml, { diPolicy: 'repair' });
+
+// Pin specific elements; lay out everything else
+const pinned = await layoutBpmn(inputXml, { pins: ['Task_Important', 'Lane_1'] });
 
 await writeFile('layouted.bpmn', result.xml);
 console.log(result.diagnostics, result.metrics);
@@ -58,6 +81,8 @@ Unparseable input, documents without a process, and invalid generated DI throw a
 bpmn-di-gen input.bpmn --output layouted.bpmn
 bpmn-di-gen input.bpmn -o layouted.bpmn --spacing compact
 bpmn-di-gen input.bpmn -o layouted.bpmn --direction top-to-bottom
+bpmn-di-gen input.bpmn -o layouted.bpmn --di-policy complete
+bpmn-di-gen input.bpmn -o layouted.bpmn --di-policy repair
 ```
 
 Run `bpmn-di-gen --help` for the complete option list.
@@ -115,15 +140,11 @@ npm run test:visual:update
 
 ## Current Limits
 
-This milestone deliberately stops at Phase 3. It does not yet support:
+The following features are not yet supported:
 
-- Multiple-pool collaboration layout or message-flow routing guarantees
-- Boundary events
-- Expanded subprocess contents
-- Data objects, groups, annotations, or associations
 - Label bounds and collision-aware label placement
-- Completing or repairing partial DI
-- Pinning existing shapes or incremental layout stability
+- Explicit `CallActivity` expansion
+- Shape-level collision avoidance for `complete` / `repair` modes (new nodes may overlap pinned ones)
 
 Unsupported semantic content remains in the BPMN document. Layout-dependent
 unsupported content may not receive DI; consult returned diagnostics and the

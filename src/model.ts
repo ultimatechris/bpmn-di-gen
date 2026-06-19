@@ -1,5 +1,22 @@
 import type { Bounds, Diagnostic, Point } from './types.js';
 
+export interface LayoutAnnotation {
+  id: string;
+  element: any;
+  connectedNodeId?: string;
+  width: number;
+  height: number;
+  bounds?: Bounds;
+}
+
+export interface LayoutAssociation {
+  id: string;
+  element: any;
+  sourceId: string;
+  targetId: string;
+  points?: Point[];
+}
+
 export interface LayoutBoundaryEvent {
   id: string;
   type: string;
@@ -61,6 +78,8 @@ export interface ProcessGraph {
   height: number;
   participantOrder: number;
   boundaryEvents: LayoutBoundaryEvent[];
+  annotations: LayoutAnnotation[];
+  associations: LayoutAssociation[];
 }
 
 export interface LayoutModel {

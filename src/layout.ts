@@ -252,6 +252,43 @@ function transposeBounds(bounds: Bounds): Bounds {
   return { x: bounds.y, y: bounds.x, width: bounds.height, height: bounds.width };
 }
 
+function placeAnnotations(graph: ProcessGraph, spacing: Spacing): void {
+  const boundsById = new Map<string, Bounds>();
+  for (const node of graph.nodes) { if (node.bounds) boundsById.set(node.id, node.bounds); }
+  for (const be of graph.boundaryEvents) { if (be.bounds) boundsById.set(be.id, be.bounds); }
+
+  const rightEdge = graph.nodes.reduce((max, n) => n.bounds ? Math.max(max, n.bounds.x + n.bounds.width) : max, 50);
+  let annotationY = graph.participant?.bounds?.y ?? (graph.nodes[0]?.bounds?.y ?? 50);
+
+  for (const ann of graph.annotations) {
+    const connectedBounds = ann.connectedNodeId ? boundsById.get(ann.connectedNodeId) : undefined;
+    ann.bounds = {
+      x: rightEdge + spacing.rankGap,
+      y: connectedBounds ? centerY(connectedBounds) - ann.height / 2 : annotationY,
+      width: ann.width,
+      height: ann.height,
+    };
+    annotationY += ann.height + spacing.nodeGap;
+  }
+}
+
+function routeAssociations(graph: ProcessGraph): void {
+  const boundsById = new Map<string, Bounds>();
+  for (const node of graph.nodes) { if (node.bounds) boundsById.set(node.id, node.bounds); }
+  for (const be of graph.boundaryEvents) { if (be.bounds) boundsById.set(be.id, be.bounds); }
+  for (const ann of graph.annotations) { if (ann.bounds) boundsById.set(ann.id, ann.bounds); }
+
+  for (const assoc of graph.associations) {
+    const source = boundsById.get(assoc.sourceId);
+    const target = boundsById.get(assoc.targetId);
+    if (!source || !target) continue;
+    assoc.points = [
+      { x: source.x + source.width, y: centerY(source) },
+      { x: target.x, y: centerY(target) },
+    ];
+  }
+}
+
 function placeBoundaryEvents(graph: ProcessGraph): void {
   const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
   for (const be of graph.boundaryEvents) {
@@ -274,6 +311,8 @@ function applyTopToBottom(model: LayoutModel): void {
     if (graph.participant?.bounds) graph.participant.bounds = transposeBounds(graph.participant.bounds);
     [graph.width, graph.height] = [graph.height, graph.width];
   }
+  // Annotations are placed after transposition — no further adjustment needed
+  // (placeAnnotations runs after applyTopToBottom)
 }
 
 export function layoutModel(model: LayoutModel, options: LayoutOptions): void {
@@ -317,4 +356,8 @@ export function layoutModel(model: LayoutModel, options: LayoutOptions): void {
   if (options.direction === 'top-to-bottom') applyTopToBottom(model);
   for (const graph of model.graphs) routeSequenceEdges(graph);
   routeMessageEdges(model);
+  for (const graph of model.graphs) {
+    placeAnnotations(graph, spacing);
+    routeAssociations(graph);
+  }
 }

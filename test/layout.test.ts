@@ -245,6 +245,36 @@ describe('boundary events', () => {
   });
 });
 
+describe('annotations and associations', () => {
+  it('generates shapes and edges for text annotations', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        id="Def_Ann" targetNamespace="http://example.com">
+        <bpmn:process id="Proc_Ann">
+          <bpmn:startEvent id="Start_Ann" />
+          <bpmn:task id="Task_Ann" name="Do work" />
+          <bpmn:endEvent id="End_Ann" />
+          <bpmn:sequenceFlow id="SF_Ann1" sourceRef="Start_Ann" targetRef="Task_Ann" />
+          <bpmn:sequenceFlow id="SF_Ann2" sourceRef="Task_Ann" targetRef="End_Ann" />
+          <bpmn:textAnnotation id="Ann1" text="Important note" />
+          <bpmn:association id="Assoc1" sourceRef="Task_Ann" targetRef="Ann1"
+            associationDirection="None" />
+        </bpmn:process>
+      </bpmn:definitions>`;
+    const result = await layoutBpmn(xml);
+    expect(result.diagnostics.filter((d) => d.code === 'UNSUPPORTED_ELEMENT')).toHaveLength(0);
+    const definitions = await parse(result.xml);
+    const shapes = shapeMap(definitions);
+    expect(shapes.has('Ann1')).toBe(true);
+    const annBounds = shapes.get('Ann1').bounds;
+    expect(annBounds.width).toBeGreaterThan(0);
+    expect(annBounds.height).toBeGreaterThan(0);
+    const edges = definitions.diagrams[0].plane.planeElement
+      .filter((e: any) => e.$type === 'bpmndi:BPMNEdge');
+    expect(edges.map((e: any) => e.bpmnElement.id)).toContain('Assoc1');
+  });
+});
+
 describe('lane-aware layout', () => {
   it('places every flow node in its semantic lane and sizes the participant', async () => {
     const result = await layoutBpmn(await fixture('lanes.bpmn'));

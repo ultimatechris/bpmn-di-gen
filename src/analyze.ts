@@ -1,5 +1,7 @@
 import { BpmnLayoutError } from './errors.js';
 import type {
+  LayoutAnnotation,
+  LayoutAssociation,
   LayoutBoundaryEvent,
   LayoutEdge,
   LayoutLane,
@@ -130,13 +132,39 @@ function buildGraph(process: any, participant: LayoutParticipant | undefined, di
       });
     }
   }
+  const annotations: LayoutAnnotation[] = [];
+  const associations: LayoutAssociation[] = [];
   for (const artifact of process.artifacts ?? []) {
-    diagnostics.push({
-      severity: 'warning',
-      code: 'UNSUPPORTED_ELEMENT',
-      message: `${artifact.$type ?? 'BPMN artifact'} ${artifact.id ?? ''} is preserved but is not laid out.`.trim(),
-      elementId: artifact.id,
-    });
+    if (isType(artifact, 'TextAnnotation')) {
+      annotations.push({ id: artifact.id, element: artifact, width: 120, height: 60 });
+    } else if (isType(artifact, 'Association')) {
+      const sourceId = artifact.sourceRef?.id;
+      const targetId = artifact.targetRef?.id;
+      if (sourceId && targetId) {
+        associations.push({ id: artifact.id, element: artifact, sourceId, targetId });
+      } else {
+        diagnostics.push({
+          severity: 'warning',
+          code: 'UNSUPPORTED_ELEMENT',
+          message: `Association ${artifact.id ?? ''} has an unresolved endpoint.`,
+          elementId: artifact.id,
+        });
+      }
+    } else {
+      diagnostics.push({
+        severity: 'warning',
+        code: 'UNSUPPORTED_ELEMENT',
+        message: `${artifact.$type ?? 'BPMN artifact'} ${artifact.id ?? ''} is preserved but is not laid out.`.trim(),
+        elementId: artifact.id,
+      });
+    }
+  }
+  // Wire connectedNodeId for annotations referenced by associations
+  for (const assoc of associations) {
+    const ann = annotations.find((a) => a.id === assoc.targetId);
+    if (ann && !ann.connectedNodeId) ann.connectedNodeId = assoc.sourceId;
+    const ann2 = annotations.find((a) => a.id === assoc.sourceId);
+    if (ann2 && !ann2.connectedNodeId) ann2.connectedNodeId = assoc.targetId;
   }
 
   const nodes: LayoutNode[] = flowElements.filter(isFlowNode).map((element: any, order: number) => {
@@ -168,7 +196,7 @@ function buildGraph(process: any, participant: LayoutParticipant | undefined, di
   if (lanes.length) assignLaneMembership(nodes, lanes, diagnostics);
   const incoming = new Set(edges.filter((e) => nodeIds.has(e.targetId)).map((e) => e.targetId));
   const roots = nodes.filter((node) => !incoming.has(node.id)).map((node) => node.id);
-  return { process, participant, nodes, edges, lanes, roots, width: 0, height: 0, participantOrder: 0, boundaryEvents };
+  return { process, participant, nodes, edges, lanes, roots, width: 0, height: 0, participantOrder: 0, boundaryEvents, annotations, associations };
 }
 
 export function analyzeDefinitions(definitions: any): LayoutModel {

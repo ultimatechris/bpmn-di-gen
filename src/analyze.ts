@@ -3,6 +3,8 @@ import type {
   LayoutAnnotation,
   LayoutAssociation,
   LayoutBoundaryEvent,
+  LayoutDataAssociation,
+  LayoutDataElement,
   LayoutEdge,
   LayoutLane,
   LayoutModel,
@@ -120,9 +122,22 @@ function buildGraph(process: any, participant: LayoutParticipant | undefined, di
   }
   const boundaryEventIds = new Set(boundaryEvents.map((be) => be.id));
 
+  // Collect data elements (DataObjectReference, DataStoreReference)
+  const dataElements: LayoutDataElement[] = [];
+  const dataAssociations: LayoutDataAssociation[] = [];
+  for (const element of flowElements) {
+    if (isType(element, 'DataObjectReference')) {
+      dataElements.push({ id: element.id, type: 'dataObject', element, connectedNodeIds: [], width: 36, height: 50 });
+    } else if (isType(element, 'DataStoreReference')) {
+      dataElements.push({ id: element.id, type: 'dataStore', element, connectedNodeIds: [], width: 50, height: 50 });
+    }
+  }
+  const dataElementIds = new Set(dataElements.map((d) => d.id));
+
   // Warn about remaining unsupported elements
   for (const element of flowElements) {
     if (isType(element, 'BoundaryEvent')) continue;
+    if (isType(element, 'DataObjectReference') || isType(element, 'DataStoreReference') || isType(element, 'DataObject')) continue;
     if (!isFlowNode(element) && !isType(element, 'SequenceFlow')) {
       diagnostics.push({
         severity: 'warning',
@@ -167,11 +182,32 @@ function buildGraph(process: any, participant: LayoutParticipant | undefined, di
     if (ann2 && !ann2.connectedNodeId) ann2.connectedNodeId = assoc.targetId;
   }
 
+  // Collect data associations from task/activity elements (after nodes are built, below)
   const nodes: LayoutNode[] = flowElements.filter(isFlowNode).map((element: any, order: number) => {
     const size = dimensions(element.$type);
     return { id: element.id, type: element.$type, element, width: size.width, height: size.height, rank: 0, order };
   });
   const nodeIds = new Set(nodes.map((node) => node.id));
+
+  // Collect data associations from task elements
+  for (const element of flowElements) {
+    if (!nodeIds.has(element.id)) continue;
+    for (const da of element.dataInputAssociations ?? []) {
+      const refs: any[] = da.sourceRef ?? [];
+      const dataId = refs[0]?.id;
+      if (dataId && dataElementIds.has(dataId)) {
+        dataAssociations.push({ id: da.id, element: da, nodeId: element.id, dataElementId: dataId, direction: 'input' });
+        dataElements.find((d) => d.id === dataId)?.connectedNodeIds.push(element.id);
+      }
+    }
+    for (const da of element.dataOutputAssociations ?? []) {
+      const dataId = da.targetRef?.id ?? (Array.isArray(da.targetRef) ? da.targetRef[0]?.id : undefined);
+      if (dataId && dataElementIds.has(dataId)) {
+        dataAssociations.push({ id: da.id, element: da, nodeId: element.id, dataElementId: dataId, direction: 'output' });
+        dataElements.find((d) => d.id === dataId)?.connectedNodeIds.push(element.id);
+      }
+    }
+  }
   const validEndpoints = new Set([...nodeIds, ...boundaryEventIds]);
 
   const edges: LayoutEdge[] = flowElements
@@ -196,7 +232,7 @@ function buildGraph(process: any, participant: LayoutParticipant | undefined, di
   if (lanes.length) assignLaneMembership(nodes, lanes, diagnostics);
   const incoming = new Set(edges.filter((e) => nodeIds.has(e.targetId)).map((e) => e.targetId));
   const roots = nodes.filter((node) => !incoming.has(node.id)).map((node) => node.id);
-  return { process, participant, nodes, edges, lanes, roots, width: 0, height: 0, participantOrder: 0, boundaryEvents, annotations, associations };
+  return { process, participant, nodes, edges, lanes, roots, width: 0, height: 0, participantOrder: 0, boundaryEvents, annotations, associations, dataElements, dataAssociations };
 }
 
 export function analyzeDefinitions(definitions: any): LayoutModel {

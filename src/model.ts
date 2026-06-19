@@ -1,5 +1,24 @@
 import type { Bounds, Diagnostic, Point } from './types.js';
 
+export interface LayoutDataElement {
+  id: string;
+  type: 'dataObject' | 'dataStore';
+  element: any;
+  connectedNodeIds: string[];
+  width: number;
+  height: number;
+  bounds?: Bounds;
+}
+
+export interface LayoutDataAssociation {
+  id: string;
+  element: any;
+  nodeId: string;
+  dataElementId: string;
+  direction: 'input' | 'output';
+  points?: Point[];
+}
+
 export interface LayoutAnnotation {
   id: string;
   element: any;
@@ -80,6 +99,8 @@ export interface ProcessGraph {
   boundaryEvents: LayoutBoundaryEvent[];
   annotations: LayoutAnnotation[];
   associations: LayoutAssociation[];
+  dataElements: LayoutDataElement[];
+  dataAssociations: LayoutDataAssociation[];
 }
 
 export interface LayoutModel {

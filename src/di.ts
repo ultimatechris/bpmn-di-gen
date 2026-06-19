@@ -79,6 +79,12 @@ export function writeDiagramInterchange(moddle: BpmnModdle, model: LayoutModel, 
     for (const assoc of graph.associations) {
       if (assoc.points) addEdge(assoc.element, assoc.points);
     }
+    for (const de of graph.dataElements) {
+      if (de.bounds) addShape(de.element, de.bounds);
+    }
+    for (const da of graph.dataAssociations) {
+      if (da.points) addEdge(da.element, da.points);
+    }
   }
   for (const edge of model.messageEdges) {
     if (edge.points) addEdge(edge.element, edge.points);

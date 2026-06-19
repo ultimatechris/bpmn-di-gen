@@ -252,6 +252,38 @@ function transposeBounds(bounds: Bounds): Bounds {
   return { x: bounds.y, y: bounds.x, width: bounds.height, height: bounds.width };
 }
 
+function placeDataElements(graph: ProcessGraph, spacing: Spacing): void {
+  const boundsById = new Map<string, Bounds>();
+  for (const node of graph.nodes) { if (node.bounds) boundsById.set(node.id, node.bounds); }
+
+  for (const de of graph.dataElements) {
+    const hostId = de.connectedNodeIds[0];
+    const hostBounds = hostId ? boundsById.get(hostId) : undefined;
+    de.bounds = {
+      x: hostBounds ? hostBounds.x + hostBounds.width / 2 - de.width / 2 : 50,
+      y: hostBounds ? hostBounds.y - de.height - spacing.nodeGap : 50,
+      width: de.width,
+      height: de.height,
+    };
+  }
+}
+
+function routeDataAssociations(graph: ProcessGraph): void {
+  const boundsById = new Map<string, Bounds>();
+  for (const node of graph.nodes) { if (node.bounds) boundsById.set(node.id, node.bounds); }
+  for (const de of graph.dataElements) { if (de.bounds) boundsById.set(de.id, de.bounds); }
+
+  for (const da of graph.dataAssociations) {
+    const nodeBounds = boundsById.get(da.nodeId);
+    const dataBounds = boundsById.get(da.dataElementId);
+    if (!nodeBounds || !dataBounds) continue;
+    da.points = [
+      { x: centerX(nodeBounds), y: nodeBounds.y },
+      { x: centerX(dataBounds), y: dataBounds.y + dataBounds.height },
+    ];
+  }
+}
+
 function placeAnnotations(graph: ProcessGraph, spacing: Spacing): void {
   const boundsById = new Map<string, Bounds>();
   for (const node of graph.nodes) { if (node.bounds) boundsById.set(node.id, node.bounds); }
@@ -358,6 +390,8 @@ export function layoutModel(model: LayoutModel, options: LayoutOptions): void {
   routeMessageEdges(model);
   for (const graph of model.graphs) {
     placeAnnotations(graph, spacing);
+    placeDataElements(graph, spacing);
     routeAssociations(graph);
+    routeDataAssociations(graph);
   }
 }

@@ -275,6 +275,35 @@ describe('annotations and associations', () => {
   });
 });
 
+describe('data elements', () => {
+  it('generates shapes for data object references', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        id="Def_Data" targetNamespace="http://example.com">
+        <bpmn:process id="Proc_Data">
+          <bpmn:startEvent id="Start_D" />
+          <bpmn:task id="Task_D" name="Save data">
+            <bpmn:dataOutputAssociation id="DOA1">
+              <bpmn:targetRef>DataRef1</bpmn:targetRef>
+            </bpmn:dataOutputAssociation>
+          </bpmn:task>
+          <bpmn:endEvent id="End_D" />
+          <bpmn:dataObject id="DataObj1" />
+          <bpmn:dataObjectReference id="DataRef1" dataObjectRef="DataObj1" name="Order data" />
+          <bpmn:sequenceFlow id="SF_D1" sourceRef="Start_D" targetRef="Task_D" />
+          <bpmn:sequenceFlow id="SF_D2" sourceRef="Task_D" targetRef="End_D" />
+        </bpmn:process>
+      </bpmn:definitions>`;
+    const result = await layoutBpmn(xml);
+    expect(result.diagnostics.filter((d) => d.code === 'UNSUPPORTED_ELEMENT')).toHaveLength(0);
+    const shapes = shapeMap(await parse(result.xml));
+    expect(shapes.has('DataRef1')).toBe(true);
+    const dataBounds = shapes.get('DataRef1').bounds;
+    expect(dataBounds.width).toBeGreaterThan(0);
+    expect(dataBounds.height).toBeGreaterThan(0);
+  });
+});
+
 describe('lane-aware layout', () => {
   it('places every flow node in its semantic lane and sizes the participant', async () => {
     const result = await layoutBpmn(await fixture('lanes.bpmn'));

@@ -1,5 +1,5 @@
 import type BpmnModdle from 'bpmn-moddle';
-import type { LayoutModel } from './model.js';
+import type { LayoutModel, ProcessGraph } from './model.js';
 import type { Bounds, LayoutOptions, Point } from './types.js';
 
 function collectIds(value: any, ids: Set<string>, visited: Set<any>): void {
@@ -59,13 +59,15 @@ export function writeDiagramInterchange(moddle: BpmnModdle, model: LayoutModel, 
     }));
   };
 
-  for (const graph of model.graphs) {
-    const isHorizontal = options.direction !== 'top-to-bottom';
-    if (graph.participant?.bounds) addShape(graph.participant.element, graph.participant.bounds, { isHorizontal });
-    for (const lane of graph.lanes) addShape(lane.element, lane.bounds!, { isHorizontal });
+  const emitGraph = (graph: ProcessGraph, isHorizontal: boolean): void => {
     for (const node of graph.nodes) {
-      const extra = node.type.endsWith('SubProcess') ? { isExpanded: false } : {};
-      addShape(node.element, node.bounds!, extra);
+      if (node.subGraph) {
+        addShape(node.element, node.bounds!, { isExpanded: true });
+        emitGraph(node.subGraph, isHorizontal);
+      } else {
+        const extra = node.type.endsWith('SubProcess') ? { isExpanded: false } : {};
+        addShape(node.element, node.bounds!, extra);
+      }
     }
     for (const be of graph.boundaryEvents) {
       if (be.bounds) addShape(be.element, be.bounds, { cancelActivity: true });
@@ -88,6 +90,13 @@ export function writeDiagramInterchange(moddle: BpmnModdle, model: LayoutModel, 
     for (const group of graph.groups) {
       if (group.bounds) addShape(group.element, group.bounds);
     }
+  };
+
+  for (const graph of model.graphs) {
+    const isHorizontal = options.direction !== 'top-to-bottom';
+    if (graph.participant?.bounds) addShape(graph.participant.element, graph.participant.bounds, { isHorizontal });
+    for (const lane of graph.lanes) addShape(lane.element, lane.bounds!, { isHorizontal });
+    emitGraph(graph, isHorizontal);
   }
   for (const edge of model.messageEdges) {
     if (edge.points) addEdge(edge.element, edge.points);

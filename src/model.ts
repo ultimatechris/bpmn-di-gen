@@ -56,6 +56,7 @@ export interface LayoutNode {
   rank: number;
   order: number;
   bounds?: Bounds;
+  subGraph?: ProcessGraph;
 }
 
 export interface LayoutEdge {

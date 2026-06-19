@@ -20,6 +20,7 @@ const SPACING: Record<NonNullable<LayoutOptions['spacing']>, Spacing> = {
 const POOL_HEADER = 30;
 const LANE_HEADER = 30;
 const BLACK_BOX_PARTICIPANT_HEIGHT = 120;
+const SUBPROCESS_PADDING = 40;
 
 function descendants(lane: LayoutLane, byId: Map<string, LayoutLane>): LayoutLane[] {
   if (!lane.childIds.length) return [lane];
@@ -36,7 +37,18 @@ function columnWidth(nodes: LayoutNode[]): number {
   return Math.max(100, ...nodes.map((node) => node.width));
 }
 
+function presizeSubprocesses(graph: ProcessGraph, spacing: Spacing): void {
+  for (const node of graph.nodes) {
+    if (!node.subGraph) continue;
+    presizeSubprocesses(node.subGraph, spacing);
+    layoutGraph(node.subGraph, 0, 0, spacing);
+    node.width = node.subGraph.width + SUBPROCESS_PADDING * 2;
+    node.height = node.subGraph.height + SUBPROCESS_PADDING * 2;
+  }
+}
+
 function layoutGraph(graph: ProcessGraph, x: number, y: number, spacing: Spacing): void {
+  presizeSubprocesses(graph, spacing);
   const nodeIds = new Set(graph.nodes.map((n) => n.id));
   const rankEdges = graph.edges.filter((e) => nodeIds.has(e.sourceId) && nodeIds.has(e.targetId));
   assignRanks(graph.nodes, rankEdges);
@@ -335,6 +347,43 @@ function placeBoundaryEvents(graph: ProcessGraph): void {
   }
 }
 
+function shiftGraph(graph: ProcessGraph, ox: number, oy: number): void {
+  for (const node of graph.nodes) {
+    if (node.bounds) { node.bounds.x += ox; node.bounds.y += oy; }
+  }
+  for (const be of graph.boundaryEvents) {
+    if (be.bounds) { be.bounds.x += ox; be.bounds.y += oy; }
+  }
+  for (const edge of graph.edges) {
+    if (edge.points) edge.points = edge.points.map((p) => ({ x: p.x + ox, y: p.y + oy }));
+  }
+  for (const ann of graph.annotations) {
+    if (ann.bounds) { ann.bounds.x += ox; ann.bounds.y += oy; }
+  }
+  for (const assoc of graph.associations) {
+    if (assoc.points) assoc.points = assoc.points.map((p) => ({ x: p.x + ox, y: p.y + oy }));
+  }
+  for (const de of graph.dataElements) {
+    if (de.bounds) { de.bounds.x += ox; de.bounds.y += oy; }
+  }
+  for (const da of graph.dataAssociations) {
+    if (da.points) da.points = da.points.map((p) => ({ x: p.x + ox, y: p.y + oy }));
+  }
+  for (const group of graph.groups) {
+    if (group.bounds) { group.bounds.x += ox; group.bounds.y += oy; }
+  }
+}
+
+function applySubgraphOffsets(graph: ProcessGraph): void {
+  for (const node of graph.nodes) {
+    if (!node.subGraph || !node.bounds) continue;
+    const ox = node.bounds.x + SUBPROCESS_PADDING;
+    const oy = node.bounds.y + SUBPROCESS_PADDING;
+    shiftGraph(node.subGraph, ox, oy);
+    applySubgraphOffsets(node.subGraph);
+  }
+}
+
 const GROUP_PADDING = 20;
 
 function placeGroups(graph: ProcessGraph): void {
@@ -354,16 +403,37 @@ function placeGroups(graph: ProcessGraph): void {
   }
 }
 
-function applyTopToBottom(model: LayoutModel): void {
-  for (const graph of model.graphs) {
-    for (const node of graph.nodes) node.bounds = transposeBounds(node.bounds!);
-    for (const be of graph.boundaryEvents) { if (be.bounds) be.bounds = transposeBounds(be.bounds); }
-    for (const lane of graph.lanes) lane.bounds = transposeBounds(lane.bounds!);
-    if (graph.participant?.bounds) graph.participant.bounds = transposeBounds(graph.participant.bounds);
-    [graph.width, graph.height] = [graph.height, graph.width];
+function transposeGraph(graph: ProcessGraph): void {
+  for (const node of graph.nodes) {
+    node.bounds = transposeBounds(node.bounds!);
+    if (node.subGraph) transposeGraph(node.subGraph);
   }
-  // Annotations are placed after transposition — no further adjustment needed
-  // (placeAnnotations runs after applyTopToBottom)
+  for (const be of graph.boundaryEvents) { if (be.bounds) be.bounds = transposeBounds(be.bounds); }
+  for (const lane of graph.lanes) lane.bounds = transposeBounds(lane.bounds!);
+  if (graph.participant?.bounds) graph.participant.bounds = transposeBounds(graph.participant.bounds);
+  [graph.width, graph.height] = [graph.height, graph.width];
+}
+
+function applyTopToBottom(model: LayoutModel): void {
+  for (const graph of model.graphs) transposeGraph(graph);
+}
+
+function placeBoundaryEventsDeep(graph: ProcessGraph): void {
+  for (const node of graph.nodes) {
+    if (node.subGraph) { placeBoundaryEvents(node.subGraph); placeBoundaryEventsDeep(node.subGraph); }
+  }
+}
+
+function routeDeep(graph: ProcessGraph, spacing: Spacing): void {
+  routeSequenceEdges(graph);
+  placeAnnotations(graph, spacing);
+  placeDataElements(graph, spacing);
+  routeAssociations(graph);
+  routeDataAssociations(graph);
+  placeGroups(graph);
+  for (const node of graph.nodes) {
+    if (node.subGraph) routeDeep(node.subGraph, spacing);
+  }
 }
 
 export function layoutModel(model: LayoutModel, options: LayoutOptions): void {
@@ -404,14 +474,9 @@ export function layoutModel(model: LayoutModel, options: LayoutOptions): void {
   }
 
   for (const graph of model.graphs) placeBoundaryEvents(graph);
+  for (const graph of model.graphs) applySubgraphOffsets(graph);
+  for (const graph of model.graphs) placeBoundaryEventsDeep(graph);
   if (options.direction === 'top-to-bottom') applyTopToBottom(model);
-  for (const graph of model.graphs) routeSequenceEdges(graph);
+  for (const graph of model.graphs) routeDeep(graph, spacing);
   routeMessageEdges(model);
-  for (const graph of model.graphs) {
-    placeAnnotations(graph, spacing);
-    placeDataElements(graph, spacing);
-    routeAssociations(graph);
-    routeDataAssociations(graph);
-    placeGroups(graph);
-  }
 }

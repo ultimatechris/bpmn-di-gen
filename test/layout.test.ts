@@ -304,6 +304,39 @@ describe('data elements', () => {
   });
 });
 
+describe('expanded subprocesses', () => {
+  it('places subprocess as expanded container with child shapes inside', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        id="Def_Sub" targetNamespace="http://example.com">
+        <bpmn:process id="Proc_Sub">
+          <bpmn:startEvent id="Start_S" />
+          <bpmn:subProcess id="SubProc1" name="Sub work">
+            <bpmn:startEvent id="Sub_Start" />
+            <bpmn:task id="Sub_Task" name="Inner task" />
+            <bpmn:endEvent id="Sub_End" />
+            <bpmn:sequenceFlow id="Sub_SF1" sourceRef="Sub_Start" targetRef="Sub_Task" />
+            <bpmn:sequenceFlow id="Sub_SF2" sourceRef="Sub_Task" targetRef="Sub_End" />
+          </bpmn:subProcess>
+          <bpmn:endEvent id="End_S" />
+          <bpmn:sequenceFlow id="SF_S1" sourceRef="Start_S" targetRef="SubProc1" />
+          <bpmn:sequenceFlow id="SF_S2" sourceRef="SubProc1" targetRef="End_S" />
+        </bpmn:process>
+      </bpmn:definitions>`;
+    const result = await layoutBpmn(xml);
+    expect(result.diagnostics.filter((d) => d.code === 'UNSUPPORTED_ELEMENT')).toHaveLength(0);
+    const definitions = await parse(result.xml);
+    const shapes = shapeMap(definitions);
+    expect(shapes.has('SubProc1')).toBe(true);
+    expect(shapes.get('SubProc1').isExpanded).toBe(true);
+    const subBounds = shapes.get('SubProc1').bounds;
+    expect(subBounds.width).toBeGreaterThan(100);
+    expect(subBounds.height).toBeGreaterThan(80);
+    expect(shapes.has('Sub_Task')).toBe(true);
+    expect(inside(shapes.get('Sub_Task').bounds, subBounds)).toBe(true);
+  });
+});
+
 describe('groups', () => {
   it('generates a shape for a group artifact encompassing process content', async () => {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>

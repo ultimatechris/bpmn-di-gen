@@ -201,6 +201,13 @@ function buildGraph(process: any, participant: LayoutParticipant | undefined, di
   });
   const nodeIds = new Set(nodes.map((node) => node.id));
 
+  // Recursively build subgraphs for expanded subprocesses
+  for (const node of nodes) {
+    if (isType(node.element, 'SubProcess') && node.element.flowElements?.length) {
+      node.subGraph = buildGraph(node.element, undefined, diagnostics);
+    }
+  }
+
   // Collect data associations from task elements
   for (const element of flowElements) {
     if (!nodeIds.has(element.id)) continue;

@@ -399,3 +399,36 @@ describe('lane-aware layout', () => {
     expect(inside(shapes.get('Task_B').bounds, shapes.get('Lane_Team_B').bounds)).toBe(true);
   });
 });
+
+describe('artifacts fixture', () => {
+  it('lays out annotation, data objects, expanded subprocess, and group without errors', async () => {
+    const result = await layoutBpmn(await fixture('artifacts.bpmn'));
+    expect(result.diagnostics.filter((d) => d.severity === 'error')).toHaveLength(0);
+    expect(result.diagnostics.filter((d) => d.code === 'UNSUPPORTED_ELEMENT')).toHaveLength(0);
+    const definitions = await parse(result.xml);
+    const shapes = shapeMap(definitions);
+
+    // expanded subprocess
+    expect(shapes.has('SubProc_Fulfill')).toBe(true);
+    expect(shapes.get('SubProc_Fulfill').isExpanded).toBe(true);
+    const subBounds = shapes.get('SubProc_Fulfill').bounds;
+    expect(inside(shapes.get('Sub_Pack').bounds, subBounds)).toBe(true);
+
+    // annotation shape
+    expect(shapes.has('Ann_Validate')).toBe(true);
+
+    // data object and data store
+    expect(shapes.has('DataRef_Order')).toBe(true);
+    expect(shapes.has('DataStore_CRM')).toBe(true);
+
+    // group shape encompasses core nodes
+    expect(shapes.has('Group_Core')).toBe(true);
+    const groupBounds = shapes.get('Group_Core').bounds;
+    expect(inside(shapes.get('Task_Validate').bounds, groupBounds)).toBe(true);
+    expect(inside(shapes.get('Task_Invoice').bounds, groupBounds)).toBe(true);
+
+    // association edge
+    const edges = planeElements(definitions).filter((e: any) => e.$type === 'bpmndi:BPMNEdge');
+    expect(edges.map((e: any) => e.bpmnElement.id)).toContain('Assoc_Validate');
+  });
+});

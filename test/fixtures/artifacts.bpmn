@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  id="Def_Artifacts" targetNamespace="http://example.com/artifacts">
+
+  <bpmn:category id="Cat1">
+    <bpmn:categoryValue id="CatVal1" value="Core Flow" />
+  </bpmn:category>
+
+  <bpmn:process id="Proc_Artifacts" isExecutable="false">
+    <bpmn:startEvent id="Start_A" name="Order received" />
+
+    <bpmn:task id="Task_Validate" name="Validate order"
+      categoryValueRef="CatVal1" />
+
+    <bpmn:subProcess id="SubProc_Fulfill" name="Fulfill order">
+      <bpmn:startEvent id="Sub_Start" />
+      <bpmn:task id="Sub_Pack" name="Pack items" />
+      <bpmn:task id="Sub_Ship" name="Ship order" />
+      <bpmn:endEvent id="Sub_End" />
+      <bpmn:sequenceFlow id="Sub_SF1" sourceRef="Sub_Start" targetRef="Sub_Pack" />
+      <bpmn:sequenceFlow id="Sub_SF2" sourceRef="Sub_Pack" targetRef="Sub_Ship" />
+      <bpmn:sequenceFlow id="Sub_SF3" sourceRef="Sub_Ship" targetRef="Sub_End" />
+    </bpmn:subProcess>
+
+    <bpmn:task id="Task_Invoice" name="Send invoice"
+      categoryValueRef="CatVal1" />
+
+    <bpmn:endEvent id="End_A" name="Order complete" />
+
+    <bpmn:dataObject id="DataObj_Order" />
+    <bpmn:dataObjectReference id="DataRef_Order" dataObjectRef="DataObj_Order"
+      name="Order data" />
+
+    <bpmn:dataStoreReference id="DataStore_CRM" name="CRM Database" />
+
+    <bpmn:sequenceFlow id="SF_A1" sourceRef="Start_A" targetRef="Task_Validate" />
+    <bpmn:sequenceFlow id="SF_A2" sourceRef="Task_Validate" targetRef="SubProc_Fulfill" />
+    <bpmn:sequenceFlow id="SF_A3" sourceRef="SubProc_Fulfill" targetRef="Task_Invoice" />
+    <bpmn:sequenceFlow id="SF_A4" sourceRef="Task_Invoice" targetRef="End_A" />
+
+    <bpmn:textAnnotation id="Ann_Validate" text="Check credit and inventory" />
+    <bpmn:association id="Assoc_Validate" sourceRef="Task_Validate" targetRef="Ann_Validate"
+      associationDirection="None" />
+
+    <bpmn:group id="Group_Core" categoryValueRef="CatVal1" />
+  </bpmn:process>
+
+</bpmn:definitions>

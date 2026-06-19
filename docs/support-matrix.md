@@ -1,6 +1,6 @@
 # Support Matrix
 
-This matrix describes the Phase 3 implementation, not the eventual roadmap.
+This matrix describes the Phase 5 implementation.
 
 | Area | Status | Notes |
 | --- | --- | --- |
@@ -8,27 +8,30 @@ This matrix describes the Phase 3 implementation, not the eventual roadmap.
 | Existing DI | Supported by replacement | Existing diagrams are removed |
 | Vendor attributes | Preserved | Covered by round-trip tests |
 | Extension elements | Preserved | Opaque namespaced content is retained |
-| Start, intermediate, and end events | Supported | Boundary events excluded |
+| Start, intermediate, and end events | Supported | Standard 36 x 36 bounds |
+| Boundary events | Supported | Placed on host border; exception flows route below host |
 | Tasks and activities | Supported | Standard 100 x 80 bounds |
 | Gateways | Supported | Standard 50 x 50 bounds |
-| Collapsed subprocesses | Supported as activities | Internal contents are not laid out |
+| Collapsed subprocesses | Supported as activities | Internal contents not expanded |
+| Expanded subprocesses | Supported | Child elements laid out recursively inside the subprocess shape |
 | Sequence flows | Supported | Orthogonal forward and backward routes |
 | Branches and joins | Supported | Stable layered ranking |
 | Cycles | Supported | SCC-based ranking and backward channels |
 | Disconnected components | Supported | Stable stacked components |
+| Text annotations | Supported | Placed to the right of process content; association routed |
+| Associations | Supported | Straight line between source and target |
+| Data objects | Supported | DataObjectReference and DataStoreReference placed above connected task |
+| Data associations | Supported | Routed between task and data element |
+| Groups | Supported | Bounding box around member nodes (or all nodes if unresolved) |
 | Flat lanes | Supported | Lane membership is a hard constraint |
 | Empty lanes | Supported | Retain configured minimum size |
 | Nested lane sets | Supported | Deepest membership and parent containment |
 | One participant and process | Supported | Participant is sized around process/lanes |
-| Black-box participant | Not laid out | Planned with collaboration work |
-| Multiple pools | Not supported | Phase 4 |
-| Message flows | Parsed, best-effort only | Full collaboration routing is Phase 4 |
-| Boundary events | Not supported | Semantic element remains in XML |
-| Expanded subprocesses | Not supported | Phase 5 |
-| Data objects and stores | Not supported | Semantic elements remain in XML |
-| Groups, annotations, associations | Not supported | Semantic elements remain in XML |
+| Black-box participants | Supported | Sized to collaboration width; stacked in declaration order |
+| Multiple pools | Supported | Stacked vertically in collaboration order |
+| Message flows | Supported | Routed between participant shapes |
 | Explicit label DI | Not supported | Modelers may render default labels |
-| Partial DI completion/repair | Not supported | Replacement only |
+| Partial DI completion/repair | Not supported | Replacement only — Phase 6 |
 | Left-to-right layout | Supported | Default |
 | Top-to-bottom layout | Supported | Transposes partitions and direction |
 | Spacing presets | Supported | Compact, normal, spacious |

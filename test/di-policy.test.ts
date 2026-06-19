@@ -73,6 +73,41 @@ describe('diPolicy: repair', () => {
     const edges = definitions_edges(await parse(result.xml));
     expect(edges.map((e: any) => e.bpmnElement.id)).toContain('SF_P1');
   });
+
+  it('replaces invalid (zero/negative) bounds with computed layout', async () => {
+    const withInvalidDi = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+  id="Def_Invalid" targetNamespace="http://example.com">
+  <bpmn:process id="Proc_Invalid">
+    <bpmn:startEvent id="Inv_Start" />
+    <bpmn:task id="Inv_Task" name="Work" />
+    <bpmn:endEvent id="Inv_End" />
+    <bpmn:sequenceFlow id="Inv_SF1" sourceRef="Inv_Start" targetRef="Inv_Task" />
+    <bpmn:sequenceFlow id="Inv_SF2" sourceRef="Inv_Task" targetRef="Inv_End" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diag_Invalid">
+    <bpmndi:BPMNPlane id="Plane_Invalid" bpmnElement="Proc_Invalid">
+      <bpmndi:BPMNShape id="Inv_Start_di" bpmnElement="Inv_Start">
+        <dc:Bounds x="200" y="200" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Inv_Task_di" bpmnElement="Inv_Task">
+        <dc:Bounds x="0" y="0" width="-1" height="-1" />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
+    const result = await layoutBpmn(withInvalidDi, { diPolicy: 'repair' });
+    const shapes = shapeMap(await parse(result.xml));
+    // Valid existing bounds preserved
+    expect(shapes.get('Inv_Start').bounds.x).toBe(200);
+    expect(shapes.get('Inv_Start').bounds.y).toBe(200);
+    // Invalid bounds replaced with computed layout (positive width/height)
+    const taskBounds = shapes.get('Inv_Task').bounds;
+    expect(taskBounds.width).toBeGreaterThan(0);
+    expect(taskBounds.height).toBeGreaterThan(0);
+  });
 });
 
 describe('pins', () => {

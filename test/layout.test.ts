@@ -243,6 +243,18 @@ describe('boundary events', () => {
       .filter((e: any) => e.$type === 'bpmndi:BPMNEdge');
     expect(edges.map((e: any) => e.bpmnElement.id)).toContain('SF_Exception');
   });
+
+  it('handles the boundary-events fixture without errors', async () => {
+    const result = await layoutBpmn(await fixture('boundary-events.bpmn'));
+    expect(result.diagnostics.filter((d) => d.severity === 'error')).toHaveLength(0);
+    expect(result.diagnostics.filter((d) => d.code === 'UNSUPPORTED_ELEMENT')).toHaveLength(0);
+    const shapes = shapeMap(await parse(result.xml));
+    expect(shapes.has('Boundary_Err')).toBe(true);
+    expect(shapes.has('Task_Main')).toBe(true);
+    const beBounds = shapes.get('Boundary_Err').bounds;
+    const taskBounds = shapes.get('Task_Main').bounds;
+    expect(beBounds.y + beBounds.height / 2).toBeGreaterThanOrEqual(taskBounds.y + taskBounds.height - 2);
+  });
 });
 
 describe('annotations and associations', () => {
@@ -334,6 +346,20 @@ describe('expanded subprocesses', () => {
     expect(subBounds.height).toBeGreaterThan(80);
     expect(shapes.has('Sub_Task')).toBe(true);
     expect(inside(shapes.get('Sub_Task').bounds, subBounds)).toBe(true);
+  });
+
+  it('handles the subprocess fixture with all child elements contained inside', async () => {
+    const result = await layoutBpmn(await fixture('subprocess.bpmn'));
+    expect(result.diagnostics.filter((d) => d.code === 'UNSUPPORTED_ELEMENT')).toHaveLength(0);
+    const definitions = await parse(result.xml);
+    const shapes = shapeMap(definitions);
+    expect(shapes.has('SP1')).toBe(true);
+    expect(shapes.get('SP1').isExpanded).toBe(true);
+    const spBounds = shapes.get('SP1').bounds;
+    for (const id of ['SubStart', 'SubTask', 'SubEnd']) {
+      expect(shapes.has(id)).toBe(true);
+      expect(inside(shapes.get(id).bounds, spBounds)).toBe(true);
+    }
   });
 });
 

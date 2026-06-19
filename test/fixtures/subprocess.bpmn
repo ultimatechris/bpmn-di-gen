@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  id="Definitions_SP" targetNamespace="http://example.com/sp">
+  <bpmn:process id="Process_SP">
+    <bpmn:startEvent id="Start_SP" name="Start" />
+    <bpmn:subProcess id="SP1" name="Handle request">
+      <bpmn:startEvent id="SubStart" name="Begin" />
+      <bpmn:task id="SubTask" name="Work" />
+      <bpmn:endEvent id="SubEnd" name="Done" />
+      <bpmn:sequenceFlow id="SubFlow1" sourceRef="SubStart" targetRef="SubTask" />
+      <bpmn:sequenceFlow id="SubFlow2" sourceRef="SubTask" targetRef="SubEnd" />
+    </bpmn:subProcess>
+    <bpmn:endEvent id="End_SP" name="End" />
+    <bpmn:sequenceFlow id="SF_SP1" sourceRef="Start_SP" targetRef="SP1" />
+    <bpmn:sequenceFlow id="SF_SP2" sourceRef="SP1" targetRef="End_SP" />
+  </bpmn:process>
+</bpmn:definitions>

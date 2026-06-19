@@ -19,6 +19,12 @@ function shapeMap(definitions: any): Map<string, any> {
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 
+function inside(inner: any, outer: any): boolean {
+  return inner.x >= outer.x && inner.y >= outer.y
+    && inner.x + inner.width <= outer.x + outer.width
+    && inner.y + inner.height <= outer.y + outer.height;
+}
+
 describe('diagnostics and errors', () => {
   it('rejects empty and malformed XML with a domain error', async () => {
     await expect(layoutBpmn('')).rejects.toBeInstanceOf(BpmnLayoutError);
@@ -60,11 +66,9 @@ describe('diagnostics and errors', () => {
   it('reports unsupported future constructs while preserving their semantics', async () => {
     const input = await readFile(join(fixtures, 'future-constructs.bpmn'), 'utf8');
     const result = await layoutBpmn(input);
-    // Phase 4: black-box participant is handled — UNROUTABLE_MESSAGE_FLOW is gone
-    // Boundary event + expanded subprocess still unsupported → UNSUPPORTED_ELEMENT remains
-    // Phase 5 (boundary events): all elements in this fixture are now handled.
-    // SubProcess_Handle is laid out as a collapsed activity (no internal layout yet).
+    // Phase 5: all elements in this fixture are now handled — no errors expected.
     expect(result.diagnostics.filter((d) => d.severity === 'error')).toHaveLength(0);
+    expect(result.diagnostics.filter((d) => d.code === 'UNSUPPORTED_ELEMENT')).toHaveLength(0);
     for (const id of ['Participant_Customer', 'Message_Request', 'SubProcess_Handle', 'Boundary_Timer', 'SubTask']) {
       expect(result.xml).toContain(`id="${id}"`);
     }
@@ -72,5 +76,9 @@ describe('diagnostics and errors', () => {
     const shapes = shapeMap(definitions);
     expect(shapes.has('Participant_Customer')).toBe(true);
     expect(shapes.has('Boundary_Timer')).toBe(true);
+    // SubTask is inside the expanded SubProcess_Handle — must have a shape
+    expect(shapes.has('SubTask')).toBe(true);
+    const subProcBounds = shapes.get('SubProcess_Handle').bounds;
+    expect(inside(shapes.get('SubTask').bounds, subProcBounds)).toBe(true);
   });
 });

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  id="Definitions_BE" targetNamespace="http://example.com/be">
+  <bpmn:process id="Process_BE">
+    <bpmn:startEvent id="Start" name="Start" />
+    <bpmn:task id="Task_Main" name="Main task" />
+    <bpmn:task id="Task_Handle" name="Handle error" />
+    <bpmn:endEvent id="End_Happy" name="Success" />
+    <bpmn:endEvent id="End_Error" name="Error handled" />
+    <bpmn:boundaryEvent id="Boundary_Err" name="Error" attachedToRef="Task_Main">
+      <bpmn:errorEventDefinition id="ErrDef" />
+    </bpmn:boundaryEvent>
+    <bpmn:sequenceFlow id="SF1" sourceRef="Start" targetRef="Task_Main" />
+    <bpmn:sequenceFlow id="SF2" sourceRef="Task_Main" targetRef="End_Happy" />
+    <bpmn:sequenceFlow id="SF3" sourceRef="Boundary_Err" targetRef="Task_Handle" />
+    <bpmn:sequenceFlow id="SF4" sourceRef="Task_Handle" targetRef="End_Error" />
+  </bpmn:process>
+</bpmn:definitions>

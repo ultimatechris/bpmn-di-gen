@@ -144,6 +144,46 @@ describe('single-process layout', () => {
 });
 
 describe('multi-pool collaboration', () => {
+  it('lays out three pools in collaboration order (black-box first)', async () => {
+    const result = await layoutBpmn(await fixture('collaboration.bpmn'));
+    expect(result.metrics.participantCount).toBe(3);
+    expect(result.metrics.edgeCount).toBeGreaterThanOrEqual(4);
+
+    const definitions = await parse(result.xml);
+    const shapes = shapeMap(definitions);
+    expect(shapes.has('Participant_Customer')).toBe(true);
+    expect(shapes.has('Participant_Shop')).toBe(true);
+    expect(shapes.has('Participant_Supplier')).toBe(true);
+
+    const customerY = shapes.get('Participant_Customer').bounds.y;
+    const shopY = shapes.get('Participant_Shop').bounds.y;
+    const supplierY = shapes.get('Participant_Supplier').bounds.y;
+    expect(customerY).toBeLessThan(shopY);
+    expect(shopY).toBeLessThan(supplierY);
+
+    const pools = ['Participant_Customer', 'Participant_Shop', 'Participant_Supplier']
+      .map((id) => shapes.get(id).bounds);
+    for (let i = 0; i < pools.length; i += 1) {
+      for (let j = i + 1; j < pools.length; j += 1) {
+        expect(overlaps(pools[i], pools[j])).toBe(false);
+      }
+    }
+
+    const edges = definitions.diagrams[0].plane.planeElement
+      .filter((e: any) => e.$type === 'bpmndi:BPMNEdge');
+    const edgeIds = edges.map((e: any) => e.bpmnElement.id);
+    expect(edgeIds).toContain('MF_Order');
+    expect(edgeIds).toContain('MF_Request');
+    expect(result.diagnostics.filter((d) => d.severity === 'error')).toHaveLength(0);
+  });
+
+  it('outputs deterministic collaboration layout', async () => {
+    const input = await fixture('collaboration.bpmn');
+    const first = await layoutBpmn(input);
+    const second = await layoutBpmn(input);
+    expect(first.xml).toBe(second.xml);
+  });
+
   it('generates shapes for black-box participants', async () => {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
       <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"

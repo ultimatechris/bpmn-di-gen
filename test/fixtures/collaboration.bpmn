@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  id="Definitions_Collab"
+                  targetNamespace="http://example.com/collab">
+  <bpmn:collaboration id="Collab_OrderFulfillment">
+    <bpmn:participant id="Participant_Customer" name="Customer" />
+    <bpmn:participant id="Participant_Shop" name="Shop" processRef="Process_Shop" />
+    <bpmn:participant id="Participant_Supplier" name="Supplier" processRef="Process_Supplier" />
+    <bpmn:messageFlow id="MF_Order" sourceRef="Participant_Customer" targetRef="Start_Shop" />
+    <bpmn:messageFlow id="MF_Confirm" sourceRef="End_Shop" targetRef="Participant_Customer" />
+    <bpmn:messageFlow id="MF_Request" sourceRef="Task_Order" targetRef="Start_Supplier" />
+    <bpmn:messageFlow id="MF_Delivery" sourceRef="End_Supplier" targetRef="Task_Receive" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_Shop" isExecutable="false">
+    <bpmn:startEvent id="Start_Shop" name="Order received" />
+    <bpmn:task id="Task_Process" name="Process order" />
+    <bpmn:task id="Task_Order" name="Order from supplier" />
+    <bpmn:task id="Task_Receive" name="Receive goods" />
+    <bpmn:endEvent id="End_Shop" name="Order fulfilled" />
+    <bpmn:sequenceFlow id="SF1" sourceRef="Start_Shop" targetRef="Task_Process" />
+    <bpmn:sequenceFlow id="SF2" sourceRef="Task_Process" targetRef="Task_Order" />
+    <bpmn:sequenceFlow id="SF3" sourceRef="Task_Order" targetRef="Task_Receive" />
+    <bpmn:sequenceFlow id="SF4" sourceRef="Task_Receive" targetRef="End_Shop" />
+  </bpmn:process>
+  <bpmn:process id="Process_Supplier" isExecutable="false">
+    <bpmn:startEvent id="Start_Supplier" name="Request received" />
+    <bpmn:task id="Task_Prepare" name="Prepare shipment" />
+    <bpmn:endEvent id="End_Supplier" name="Goods shipped" />
+    <bpmn:sequenceFlow id="SF_S1" sourceRef="Start_Supplier" targetRef="Task_Prepare" />
+    <bpmn:sequenceFlow id="SF_S2" sourceRef="Task_Prepare" targetRef="End_Supplier" />
+  </bpmn:process>
+</bpmn:definitions>

@@ -118,5 +118,5 @@ npm run test:visual:update
 
 ## License
 
-[AGPL-3.0-only](LICENSE) — free to use, modify, and share. Commercial use in
-proprietary products requires you to open-source your work under the same terms.
+[PolyForm Noncommercial 1.0](LICENSE) — free to use, modify, and share for any
+non-commercial purpose. Commercial use requires a separate agreement.

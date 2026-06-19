@@ -1,4 +1,19 @@
 node_modules/
 dist/
 coverage/
+
+# Logs
 *.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Tool artifacts
+docs/superpowers/

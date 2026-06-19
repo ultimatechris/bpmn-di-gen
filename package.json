@@ -27,7 +27,7 @@
     "auto-layout",
     "swimlanes"
   ],
-  "license": "MIT",
+  "license": "LicenseRef-PolyForm-Noncommercial-1.0.0",
   "dependencies": {
     "bpmn-moddle": "^9.0.4"
   },

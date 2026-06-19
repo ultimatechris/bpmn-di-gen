@@ -1,11 +1,13 @@
 export type LayoutDirection = 'left-to-right' | 'top-to-bottom';
-export type DiPolicy = 'replace';
+export type DiPolicy = 'replace' | 'complete' | 'repair';
 export type LayoutSpacing = 'compact' | 'normal' | 'spacious';
 
 export interface LayoutOptions {
   direction?: LayoutDirection;
   diPolicy?: DiPolicy;
   spacing?: LayoutSpacing;
+  /** Element IDs whose existing DI positions are preserved regardless of policy. */
+  pins?: string[];
 }
 
 export interface Diagnostic {

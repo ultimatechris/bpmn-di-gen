@@ -2,7 +2,8 @@ import BpmnModdle from 'bpmn-moddle';
 import { analyzeDefinitions } from './analyze.js';
 import { writeDiagramInterchange } from './di.js';
 import { BpmnLayoutError } from './errors.js';
-import { layoutModel } from './layout.js';
+import { applyDiPolicy, layoutModel } from './layout.js';
+import { readExistingDi } from './read-di.js';
 import type { LayoutMetrics, LayoutOptions, LayoutResult } from './types.js';
 import { validateGeneratedDefinitions } from './validate.js';
 
@@ -59,7 +60,7 @@ function metrics(model: ReturnType<typeof analyzeDefinitions>): LayoutMetrics {
 }
 
 function validateOptions(options: LayoutOptions): void {
-  if (options.diPolicy && options.diPolicy !== 'replace') {
+  if (options.diPolicy && !['replace', 'complete', 'repair'].includes(options.diPolicy)) {
     throw new BpmnLayoutError(`Unsupported DI policy: ${options.diPolicy}`);
   }
   if (options.direction && !['left-to-right', 'top-to-bottom'].includes(options.direction)) {
@@ -84,6 +85,11 @@ export async function layoutBpmn(xml: string, options: LayoutOptions = {}): Prom
     throw new BpmnLayoutError(`Unable to parse BPMN XML: ${(error as Error).message}`);
   }
 
+  const policy = options.diPolicy ?? 'replace';
+  const existingDi = (policy !== 'replace' || (options.pins?.length ?? 0) > 0)
+    ? readExistingDi(definitions)
+    : new Map();
+
   const model = analyzeDefinitions(definitions);
   for (const warning of warnings) {
     model.diagnostics.push({
@@ -93,6 +99,7 @@ export async function layoutBpmn(xml: string, options: LayoutOptions = {}): Prom
     });
   }
   layoutModel(model, options);
+  applyDiPolicy(model, existingDi, options);
   const resultMetrics = metrics(model);
   writeDiagramInterchange(moddle, model, options);
   const { xml: outputXml } = await moddle.toXML(definitions, { format: true, preamble: true });

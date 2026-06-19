@@ -480,3 +480,80 @@ export function layoutModel(model: LayoutModel, options: LayoutOptions): void {
   for (const graph of model.graphs) routeDeep(graph, spacing);
   routeMessageEdges(model);
 }
+
+type ExistingDi = Map<string, { bounds?: Bounds; points?: Point[] }>;
+
+function applyGraphDi(graph: ProcessGraph, di: ExistingDi, preserve: (id: string) => boolean, restoreEdges: boolean): void {
+  for (const node of graph.nodes) {
+    const entry = di.get(node.id);
+    if (entry?.bounds && preserve(node.id)) node.bounds = entry.bounds;
+    if (node.subGraph) applyGraphDi(node.subGraph, di, preserve, restoreEdges);
+  }
+  for (const be of graph.boundaryEvents) {
+    const entry = di.get(be.id);
+    if (entry?.bounds && preserve(be.id)) be.bounds = entry.bounds;
+  }
+  for (const lane of graph.lanes) {
+    const entry = di.get(lane.id);
+    if (entry?.bounds && preserve(lane.id)) lane.bounds = entry.bounds;
+  }
+  if (graph.participant) {
+    const entry = di.get(graph.participant.id);
+    if (entry?.bounds && preserve(graph.participant.id)) graph.participant.bounds = entry.bounds;
+  }
+  for (const ann of graph.annotations) {
+    const entry = di.get(ann.id);
+    if (entry?.bounds && preserve(ann.id)) ann.bounds = entry.bounds;
+  }
+  for (const de of graph.dataElements) {
+    const entry = di.get(de.id);
+    if (entry?.bounds && preserve(de.id)) de.bounds = entry.bounds;
+  }
+  for (const group of graph.groups) {
+    const entry = di.get(group.id);
+    if (entry?.bounds && preserve(group.id)) group.bounds = entry.bounds;
+  }
+  if (restoreEdges) {
+    for (const edge of graph.edges) {
+      const entry = di.get(edge.id);
+      if (entry?.points && preserve(edge.id)) edge.points = entry.points;
+    }
+  }
+}
+
+export function applyDiPolicy(model: LayoutModel, di: ExistingDi, options: LayoutOptions): void {
+  const policy = options.diPolicy ?? 'replace';
+  const pins = new Set(options.pins ?? []);
+  const hasPins = pins.size > 0;
+  if (policy === 'replace' && !hasPins) return;
+
+  const spacing = SPACING[options.spacing ?? 'normal'];
+
+  function preserve(id: string): boolean {
+    if (pins.has(id)) return true;
+    if (policy === 'replace') return false;
+    const entry = di.get(id);
+    if (!entry?.bounds) return false;
+    if (policy === 'repair') return entry.bounds.width > 0 && entry.bounds.height > 0;
+    return true; // complete
+  }
+
+  const restoreEdges = policy === 'complete';
+  for (const graph of model.graphs) applyGraphDi(graph, di, preserve, restoreEdges);
+  for (const participant of model.blackBoxParticipants) {
+    const entry = di.get(participant.id);
+    if (entry?.bounds && preserve(participant.id)) participant.bounds = entry.bounds;
+  }
+  if (restoreEdges) {
+    for (const edge of model.messageEdges) {
+      const entry = di.get(edge.id);
+      if (entry?.points && preserve(edge.id)) edge.points = entry.points;
+    }
+  }
+
+  // repair: re-route all edges now that shape positions are restored
+  if (policy === 'repair') {
+    for (const graph of model.graphs) routeDeep(graph, spacing);
+    routeMessageEdges(model);
+  }
+}

@@ -143,6 +143,32 @@ describe('single-process layout', () => {
   });
 });
 
+describe('multi-pool collaboration', () => {
+  it('generates shapes for black-box participants', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        id="Def_BB" targetNamespace="http://example.com">
+        <bpmn:collaboration id="Collab_BB">
+          <bpmn:participant id="Part_Customer" name="Customer" />
+          <bpmn:participant id="Part_Shop" name="Shop" processRef="Proc_Shop" />
+        </bpmn:collaboration>
+        <bpmn:process id="Proc_Shop">
+          <bpmn:startEvent id="Start_Shop" /><bpmn:endEvent id="End_Shop" />
+          <bpmn:sequenceFlow id="SF_Shop" sourceRef="Start_Shop" targetRef="End_Shop" />
+        </bpmn:process>
+      </bpmn:definitions>`;
+    const result = await layoutBpmn(xml);
+    expect(result.metrics.participantCount).toBe(2);
+    const definitions = await parse(result.xml);
+    const shapes = shapeMap(definitions);
+    expect(shapes.has('Part_Customer')).toBe(true);
+    const bb = shapes.get('Part_Customer').bounds;
+    expect(bb.width).toBeGreaterThan(0);
+    expect(bb.height).toBeGreaterThan(0);
+    expect(result.diagnostics.filter((d) => d.code === 'UNSUPPORTED_ELEMENT')).toHaveLength(0);
+  });
+});
+
 describe('lane-aware layout', () => {
   it('places every flow node in its semantic lane and sizes the participant', async () => {
     const result = await layoutBpmn(await fixture('lanes.bpmn'));

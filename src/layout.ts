@@ -1,4 +1,4 @@
-import type { LayoutModel, LayoutLane, LayoutNode, ProcessGraph } from './model.js';
+import type { LayoutModel, LayoutLane, LayoutNode, LayoutParticipant, ProcessGraph } from './model.js';
 import type { Bounds, LayoutOptions, Point } from './types.js';
 import { assignRanks } from './rank.js';
 
@@ -19,6 +19,7 @@ const SPACING: Record<NonNullable<LayoutOptions['spacing']>, Spacing> = {
 
 const POOL_HEADER = 30;
 const LANE_HEADER = 30;
+const BLACK_BOX_PARTICIPANT_HEIGHT = 120;
 
 function descendants(lane: LayoutLane, byId: Map<string, LayoutLane>): LayoutLane[] {
   if (!lane.childIds.length) return [lane];
@@ -202,6 +203,8 @@ function endpointBounds(model: LayoutModel, id: string): Bounds | undefined {
     if (node?.bounds) return node.bounds;
     if (graph.participant?.id === id) return graph.participant.bounds;
   }
+  const blackBox = model.blackBoxParticipants.find((p) => p.id === id);
+  if (blackBox?.bounds) return blackBox.bounds;
   return undefined;
 }
 
@@ -241,11 +244,41 @@ function applyTopToBottom(model: LayoutModel): void {
 
 export function layoutModel(model: LayoutModel, options: LayoutOptions): void {
   const spacing = SPACING[options.spacing ?? 'normal'];
-  let y = 50;
-  for (const graph of model.graphs) {
-    layoutGraph(graph, 50, y, spacing);
-    y += graph.height + spacing.poolGap;
+
+  type GraphItem = { kind: 'graph'; graph: ProcessGraph; order: number };
+  type BlackBoxItem = { kind: 'blackbox'; participant: LayoutParticipant; order: number };
+  const items: Array<GraphItem | BlackBoxItem> = [
+    ...model.graphs.map((graph) => ({ kind: 'graph' as const, graph, order: graph.participantOrder })),
+    ...model.blackBoxParticipants.map((participant) => ({
+      kind: 'blackbox' as const,
+      participant,
+      order: participant.participantOrder,
+    })),
+  ];
+  items.sort((a, b) => a.order - b.order);
+
+  // First pass: compute widths of process graphs
+  let maxWidth = 0;
+  for (const item of items) {
+    if (item.kind === 'graph') {
+      layoutGraph(item.graph, 50, 0, spacing);
+      if (item.graph.width > maxWidth) maxWidth = item.graph.width;
+    }
   }
+  const blackBoxWidth = Math.max(maxWidth, 300);
+
+  // Second pass: stack at correct y offsets
+  let y = 50;
+  for (const item of items) {
+    if (item.kind === 'graph') {
+      layoutGraph(item.graph, 50, y, spacing);
+      y += item.graph.height + spacing.poolGap;
+    } else {
+      item.participant.bounds = { x: 50, y, width: blackBoxWidth, height: BLACK_BOX_PARTICIPANT_HEIGHT };
+      y += BLACK_BOX_PARTICIPANT_HEIGHT + spacing.poolGap;
+    }
+  }
+
   if (options.direction === 'top-to-bottom') applyTopToBottom(model);
   for (const graph of model.graphs) routeSequenceEdges(graph);
   routeMessageEdges(model);

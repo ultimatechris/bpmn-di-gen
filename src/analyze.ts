@@ -169,7 +169,7 @@ function buildGraph(process: any, participant: LayoutParticipant | undefined, di
   if (lanes.length) assignLaneMembership(nodes, lanes, diagnostics);
   const incoming = new Set(edges.map((edge) => edge.targetId));
   const roots = nodes.filter((node) => !incoming.has(node.id)).map((node) => node.id);
-  return { process, participant, nodes, edges, lanes, roots, width: 0, height: 0 };
+  return { process, participant, nodes, edges, lanes, roots, width: 0, height: 0, participantOrder: 0 };
 }
 
 export function analyzeDefinitions(definitions: any): LayoutModel {
@@ -178,18 +178,21 @@ export function analyzeDefinitions(definitions: any): LayoutModel {
   const processes = roots.filter((element: any) => isType(element, 'Process'));
   const collaboration = roots.find((element: any) => isType(element, 'Collaboration'));
   const graphs: ProcessGraph[] = [];
-  const participants: LayoutParticipant[] = [];
+  const blackBoxParticipants: LayoutParticipant[] = [];
 
   if (collaboration) {
-    for (const element of collaboration.participants ?? []) {
-      participants.push({
+    const collaborationParticipants: any[] = collaboration.participants ?? [];
+    collaborationParticipants.forEach((element: any, order: number) => {
+      const participant: LayoutParticipant = {
         id: element.id,
         element,
         processId: element.processRef?.id,
-      });
-    }
-    for (const participant of participants) {
-      if (!participant.processId) continue;
+        participantOrder: order,
+      };
+      if (!participant.processId) {
+        blackBoxParticipants.push(participant);
+        return;
+      }
       const process = processes.find((item: any) => item.id === participant.processId);
       if (!process) {
         diagnostics.push({
@@ -198,15 +201,17 @@ export function analyzeDefinitions(definitions: any): LayoutModel {
           message: `Participant ${participant.id} references a missing process.`,
           elementId: participant.id,
         });
-        continue;
+        return;
       }
-      graphs.push(buildGraph(process, participant, diagnostics));
-    }
+      const graph = buildGraph(process, participant, diagnostics);
+      graph.participantOrder = order;
+      graphs.push(graph);
+    });
   } else {
     for (const process of processes) graphs.push(buildGraph(process, undefined, diagnostics));
   }
 
-  if (!graphs.length && !participants.some((participant) => !participant.processId)) {
+  if (!graphs.length && !blackBoxParticipants.length) {
     throw new BpmnLayoutError('No layoutable BPMN process was found.', diagnostics);
   }
 
@@ -233,5 +238,5 @@ export function analyzeDefinitions(definitions: any): LayoutModel {
   });
 
   const planeElement = collaboration ?? graphs[0]?.process;
-  return { definitions, planeElement, collaboration, graphs, messageEdges, diagnostics };
+  return { definitions, planeElement, collaboration, graphs, messageEdges, diagnostics, blackBoxParticipants };
 }

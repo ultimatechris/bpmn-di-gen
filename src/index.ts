@@ -18,11 +18,14 @@ export type {
 export { BpmnLayoutError } from './errors.js';
 
 function metrics(model: ReturnType<typeof analyzeDefinitions>): LayoutMetrics {
-  const bounds = model.graphs.flatMap((graph) => [
-    ...graph.nodes.map((node) => node.bounds!),
-    ...graph.lanes.map((lane) => lane.bounds!),
-    ...(graph.participant?.bounds ? [graph.participant.bounds] : []),
-  ]);
+  const bounds = [
+    ...model.graphs.flatMap((graph) => [
+      ...graph.nodes.map((node) => node.bounds!),
+      ...graph.lanes.map((lane) => lane.bounds!),
+      ...(graph.participant?.bounds ? [graph.participant.bounds] : []),
+    ]),
+    ...model.blackBoxParticipants.filter((p) => p.bounds).map((p) => p.bounds!),
+  ];
   if (!bounds.length) {
     return {
       shapeCount: 0,
@@ -43,7 +46,8 @@ function metrics(model: ReturnType<typeof analyzeDefinitions>): LayoutMetrics {
     edgeCount: model.graphs.reduce((total, graph) => total + graph.edges.length, 0)
       + model.messageEdges.filter((edge) => edge.points).length,
     laneCount: model.graphs.reduce((total, graph) => total + graph.lanes.length, 0),
-    participantCount: model.graphs.filter((graph) => graph.participant).length,
+    participantCount: model.graphs.filter((graph) => graph.participant).length
+      + model.blackBoxParticipants.length,
     width: maxX - minX,
     height: maxY - minY,
     backwardEdgeCount: model.graphs.reduce(

@@ -37,6 +37,7 @@ export interface LayoutParticipant {
   element: any;
   processId?: string;
   bounds?: Bounds;
+  participantOrder: number;
 }
 
 export interface ProcessGraph {
@@ -48,6 +49,7 @@ export interface ProcessGraph {
   roots: string[];
   width: number;
   height: number;
+  participantOrder: number;
 }
 
 export interface LayoutModel {
@@ -57,4 +59,5 @@ export interface LayoutModel {
   graphs: ProcessGraph[];
   messageEdges: LayoutEdge[];
   diagnostics: Diagnostic[];
+  blackBoxParticipants: LayoutParticipant[];
 }

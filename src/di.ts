@@ -73,5 +73,10 @@ export function writeDiagramInterchange(moddle: BpmnModdle, model: LayoutModel, 
     if (edge.points) addEdge(edge.element, edge.points);
   }
 
+  const isHorizontal = options.direction !== 'top-to-bottom';
+  for (const participant of model.blackBoxParticipants) {
+    if (participant.bounds) addShape(participant.element, participant.bounds, { isHorizontal });
+  }
+
   model.definitions.diagrams = [diagram];
 }

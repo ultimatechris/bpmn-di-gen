@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:vendor="http://example.com/vendor"
+                  id="Definitions_Single"
+                  targetNamespace="http://example.com/bpmn"
+                  vendor:revision="research-1">
+  <bpmn:process id="Process_Single" name="Review request" isExecutable="true" vendor:owner="research">
+    <bpmn:startEvent id="Start" name="Received">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Review" name="Review request">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Decision" name="Accepted?">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:incoming>Flow_Loop</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+      <bpmn:outgoing>Flow_4</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Approve" name="Approve">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Rework" name="Rework">
+      <bpmn:incoming>Flow_4</bpmn:incoming>
+      <bpmn:outgoing>Flow_Loop</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="End" name="Done">
+      <bpmn:incoming>Flow_5</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="Start" targetRef="Review" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Review" targetRef="Decision" />
+    <bpmn:sequenceFlow id="Flow_3" name="yes" sourceRef="Decision" targetRef="Approve" />
+    <bpmn:sequenceFlow id="Flow_4" name="no" sourceRef="Decision" targetRef="Rework" />
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="Approve" targetRef="End" />
+    <bpmn:sequenceFlow id="Flow_Loop" sourceRef="Rework" targetRef="Decision" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="OldDiagram">
+    <bpmndi:BPMNPlane id="OldPlane" bpmnElement="Process_Single">
+      <bpmndi:BPMNShape id="OldStart_di" bpmnElement="Start">
+        <dc:Bounds x="0" y="0" width="1" height="1" />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

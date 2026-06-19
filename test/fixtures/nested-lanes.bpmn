@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_Nested"
+                  targetNamespace="http://example.com/bpmn">
+  <bpmn:process id="Process_Nested">
+    <bpmn:laneSet id="LaneSet_Root">
+      <bpmn:lane id="Lane_Operations" name="Operations">
+        <bpmn:childLaneSet id="LaneSet_Children">
+          <bpmn:lane id="Lane_Team_A" name="Team A">
+            <bpmn:flowNodeRef>Start</bpmn:flowNodeRef>
+            <bpmn:flowNodeRef>Task_A</bpmn:flowNodeRef>
+          </bpmn:lane>
+          <bpmn:lane id="Lane_Team_B" name="Team B">
+            <bpmn:flowNodeRef>Task_B</bpmn:flowNodeRef>
+            <bpmn:flowNodeRef>End</bpmn:flowNodeRef>
+          </bpmn:lane>
+        </bpmn:childLaneSet>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Start" />
+    <bpmn:task id="Task_A" name="Prepare" />
+    <bpmn:task id="Task_B" name="Execute" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="Start" targetRef="Task_A" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_A" targetRef="Task_B" />
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_B" targetRef="End" />
+  </bpmn:process>
+</bpmn:definitions>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_Lanes"
+                  targetNamespace="http://example.com/bpmn">
+  <bpmn:collaboration id="Collaboration_Order">
+    <bpmn:participant id="Participant_Shop" name="Shop" processRef="Process_Order" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_Order" name="Order handling">
+    <bpmn:laneSet id="LaneSet_Main">
+      <bpmn:lane id="Lane_Office" name="Office">
+        <bpmn:flowNodeRef>Start</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Register</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Warehouse" name="Warehouse">
+        <bpmn:flowNodeRef>Pack</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Check</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Shipping" name="Shipping">
+        <bpmn:flowNodeRef>Ship</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Empty" name="Escalations" />
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Start" name="Order received" />
+    <bpmn:task id="Register" name="Register order" />
+    <bpmn:parallelGateway id="Check" name="Prepare" />
+    <bpmn:task id="Pack" name="Pack goods" />
+    <bpmn:task id="Ship" name="Ship goods" />
+    <bpmn:endEvent id="End" name="Complete" />
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="Start" targetRef="Register" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Register" targetRef="Check" />
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Check" targetRef="Pack" />
+    <bpmn:sequenceFlow id="Flow_4" sourceRef="Pack" targetRef="Ship" />
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="Ship" targetRef="End" />
+  </bpmn:process>
+</bpmn:definitions>

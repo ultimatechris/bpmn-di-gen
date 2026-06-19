@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  id="Definitions_Future"
+                  targetNamespace="http://example.com/bpmn">
+  <bpmn:collaboration id="Collaboration_Future">
+    <bpmn:participant id="Participant_Customer" name="Customer" />
+    <bpmn:participant id="Participant_Service" name="Service" processRef="Process_Service" />
+    <bpmn:messageFlow id="Message_Request" sourceRef="Participant_Customer" targetRef="Start_Message" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_Service">
+    <bpmn:startEvent id="Start_Message" name="Request received">
+      <bpmn:messageEventDefinition id="MessageDefinition_Start" />
+    </bpmn:startEvent>
+    <bpmn:subProcess id="SubProcess_Handle" name="Handle request">
+      <bpmn:startEvent id="SubStart" />
+      <bpmn:task id="SubTask" name="Work" />
+      <bpmn:endEvent id="SubEnd" />
+      <bpmn:sequenceFlow id="SubFlow_1" sourceRef="SubStart" targetRef="SubTask" />
+      <bpmn:sequenceFlow id="SubFlow_2" sourceRef="SubTask" targetRef="SubEnd" />
+    </bpmn:subProcess>
+    <bpmn:boundaryEvent id="Boundary_Timer" attachedToRef="SubProcess_Handle">
+      <bpmn:timerEventDefinition id="TimerDefinition" />
+    </bpmn:boundaryEvent>
+    <bpmn:endEvent id="End_Service" />
+    <bpmn:sequenceFlow id="Flow_Future_1" sourceRef="Start_Message" targetRef="SubProcess_Handle" />
+    <bpmn:sequenceFlow id="Flow_Future_2" sourceRef="SubProcess_Handle" targetRef="End_Service" />
+    <bpmn:sequenceFlow id="Flow_Timeout" sourceRef="Boundary_Timer" targetRef="End_Service" />
+  </bpmn:process>
+</bpmn:definitions>

@@ -1,0 +1,44 @@
+{
+  "name": "bpmn-di-gen",
+  "version": "0.1.0",
+  "description": "Generate readable BPMN Diagram Interchange information for BPMN 2.0 XML.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "bpmn-di-gen": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "pretest": "npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm test",
+    "setup:test-browser": "playwright install firefox",
+    "test:visual:update": "npm run build && node scripts/update-visual-baselines.mjs"
+  },
+  "keywords": [
+    "bpmn",
+    "bpmndi",
+    "auto-layout",
+    "swimlanes"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "bpmn-moddle": "^9.0.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "bpmn-js": "^18.18.0",
+    "playwright": "^1.61.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
+  }
+}

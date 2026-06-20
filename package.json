@@ -5,18 +5,34 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ultimatechris/bpmn-di-gen.git"
+  },
   "bin": {
     "bpmn-di-gen": "dist/cli.js"
   },
   "files": [
     "dist",
-    "README.md"
+    "src",
+    "README.md",
+    "docs/support-matrix.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
     "pretest": "npm run build",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --dir test",
+    "test:watch": "vitest --dir test",
     "check": "npm test",
     "setup:test-browser": "playwright install firefox",
     "test:visual:update": "npm run build && node scripts/update-visual-baselines.mjs"

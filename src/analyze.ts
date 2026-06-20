@@ -23,6 +23,7 @@ const FLOW_NODE_TYPES = [
   'SubProcess',
   'CallActivity',
 ];
+const MAX_NESTING_DEPTH = 256;
 
 function isType(element: any, suffix: string): boolean {
   return typeof element?.$type === 'string' && element.$type.endsWith(suffix);
@@ -45,6 +46,9 @@ function collectLanes(
   depth: number,
   lanes: LayoutLane[],
 ): void {
+  if (depth > MAX_NESTING_DEPTH) {
+    throw new BpmnLayoutError(`BPMN lane nesting exceeds the supported depth of ${MAX_NESTING_DEPTH}.`);
+  }
   for (const laneSet of laneSets ?? []) {
     for (const lane of laneSet.lanes ?? []) {
       const item: LayoutLane = {
@@ -102,7 +106,15 @@ function assignLaneMembership(
   }
 }
 
-function buildGraph(process: any, participant: LayoutParticipant | undefined, diagnostics: Diagnostic[]): ProcessGraph {
+function buildGraph(
+  process: any,
+  participant: LayoutParticipant | undefined,
+  diagnostics: Diagnostic[],
+  nestingDepth = 0,
+): ProcessGraph {
+  if (nestingDepth > MAX_NESTING_DEPTH) {
+    throw new BpmnLayoutError(`BPMN subprocess nesting exceeds the supported depth of ${MAX_NESTING_DEPTH}.`);
+  }
   const flowElements = process.flowElements ?? [];
 
   // Collect boundary events first
@@ -212,7 +224,7 @@ function buildGraph(process: any, participant: LayoutParticipant | undefined, di
   // Recursively build subgraphs for expanded subprocesses
   for (const node of nodes) {
     if (isType(node.element, 'SubProcess') && node.element.flowElements?.length) {
-      node.subGraph = buildGraph(node.element, undefined, diagnostics);
+      node.subGraph = buildGraph(node.element, undefined, diagnostics, nestingDepth + 1);
     }
   }
 

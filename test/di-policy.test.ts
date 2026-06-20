@@ -14,6 +14,27 @@ function shapeMap(definitions: any): Map<string, any> {
   );
 }
 
+function edgeMap(definitions: any): Map<string, any> {
+  return new Map(
+    (definitions.diagrams[0].plane.planeElement ?? [])
+      .filter((e: any) => e.$type === 'bpmndi:BPMNEdge')
+      .map((e: any) => [e.bpmnElement.id, e]),
+  );
+}
+
+function expectEdgeTouchesSource(edge: any, shape: any): void {
+  expect(edge.waypoint[0]).toMatchObject({
+    x: shape.bounds.x + shape.bounds.width,
+    y: shape.bounds.y + shape.bounds.height / 2,
+  });
+}
+
+function inside(inner: any, outer: any): boolean {
+  return inner.x >= outer.x && inner.y >= outer.y
+    && inner.x + inner.width <= outer.x + outer.width
+    && inner.y + inner.height <= outer.y + outer.height;
+}
+
 const SIMPLE_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
@@ -38,6 +59,33 @@ const SIMPLE_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>`;
 
+const BPMN_WITH_EDGE_DI = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+  id="Def_EdgePolicy" targetNamespace="http://example.com">
+  <bpmn:process id="Proc_EdgePolicy">
+    <bpmn:startEvent id="Edge_Start" />
+    <bpmn:endEvent id="Edge_End" />
+    <bpmn:sequenceFlow id="Edge_Flow" sourceRef="Edge_Start" targetRef="Edge_End" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Edge_Diagram">
+    <bpmndi:BPMNPlane id="Edge_Plane" bpmnElement="Proc_EdgePolicy">
+      <bpmndi:BPMNShape id="Edge_Start_di" bpmnElement="Edge_Start">
+        <dc:Bounds x="100" y="200" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Edge_End_di" bpmnElement="Edge_End">
+        <dc:Bounds x="300" y="400" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_Flow_di" bpmnElement="Edge_Flow">
+        <di:waypoint x="111" y="222" />
+        <di:waypoint x="333" y="444" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
+
 describe('diPolicy: replace (default)', () => {
   it('discards all existing DI and generates fresh layout', async () => {
     const result = await layoutBpmn(SIMPLE_BPMN, { diPolicy: 'replace' });
@@ -49,7 +97,8 @@ describe('diPolicy: replace (default)', () => {
 describe('diPolicy: complete', () => {
   it('keeps existing shape positions and only adds DI for new elements', async () => {
     const result = await layoutBpmn(SIMPLE_BPMN, { diPolicy: 'complete' });
-    const shapes = shapeMap(await parse(result.xml));
+    const definitions = await parse(result.xml);
+    const shapes = shapeMap(definitions);
     // Start_P had existing DI at x=999 → must be preserved
     expect(shapes.get('Start_P').bounds.x).toBe(999);
     expect(shapes.get('Start_P').bounds.y).toBe(999);
@@ -58,6 +107,23 @@ describe('diPolicy: complete', () => {
     // End_P had no existing DI → auto-layout position (not 999)
     expect(shapes.has('End_P')).toBe(true);
     expect(shapes.get('End_P').bounds.x).not.toBe(999);
+    expectEdgeTouchesSource(edgeMap(definitions).get('SF_P1'), shapes.get('Start_P'));
+  });
+
+  it('preserves existing shape and edge DI exactly for top-to-bottom layout', async () => {
+    const result = await layoutBpmn(BPMN_WITH_EDGE_DI, {
+      diPolicy: 'complete',
+      direction: 'top-to-bottom',
+    });
+    const definitions = await parse(result.xml);
+    const shapes = shapeMap(definitions);
+    const edge = edgeMap(definitions).get('Edge_Flow');
+    expect(shapes.get('Edge_Start').bounds).toMatchObject({ x: 100, y: 200, width: 36, height: 36 });
+    expect(shapes.get('Edge_End').bounds).toMatchObject({ x: 300, y: 400, width: 36, height: 36 });
+    expect(edge.waypoint.map(({ x, y }: any) => ({ x, y }))).toEqual([
+      { x: 111, y: 222 },
+      { x: 333, y: 444 },
+    ]);
   });
 });
 
@@ -113,11 +179,37 @@ describe('diPolicy: repair', () => {
 describe('pins', () => {
   it('preserves pinned element positions regardless of policy', async () => {
     const result = await layoutBpmn(SIMPLE_BPMN, { diPolicy: 'replace', pins: ['Start_P'] });
-    const shapes = shapeMap(await parse(result.xml));
+    const definitions = await parse(result.xml);
+    const shapes = shapeMap(definitions);
     // Pinned element keeps existing DI
     expect(shapes.get('Start_P').bounds.x).toBe(999);
     // Non-pinned element gets fresh layout
     expect(shapes.get('Task_P').bounds.x).not.toBe(1200);
+    expectEdgeTouchesSource(edgeMap(definitions).get('SF_P1'), shapes.get('Start_P'));
+  });
+
+  it('moves generated subprocess content with a pinned container', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+        xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+        id="Def_Pinned_Sub" targetNamespace="http://example.com">
+        <bpmn:process id="Proc_Pinned_Sub">
+          <bpmn:subProcess id="Pinned_Sub"><bpmn:task id="Generated_Child" /></bpmn:subProcess>
+        </bpmn:process>
+        <bpmndi:BPMNDiagram id="Pinned_Sub_Diagram">
+          <bpmndi:BPMNPlane id="Pinned_Sub_Plane" bpmnElement="Proc_Pinned_Sub">
+            <bpmndi:BPMNShape id="Pinned_Sub_di" bpmnElement="Pinned_Sub">
+              <dc:Bounds x="900" y="700" width="290" height="290" />
+            </bpmndi:BPMNShape>
+          </bpmndi:BPMNPlane>
+        </bpmndi:BPMNDiagram>
+      </bpmn:definitions>`;
+    const definitions = await parse((await layoutBpmn(xml, { pins: ['Pinned_Sub'] })).xml);
+    const shapes = shapeMap(definitions);
+
+    expect(shapes.get('Pinned_Sub').bounds).toMatchObject({ x: 900, y: 700 });
+    expect(inside(shapes.get('Generated_Child').bounds, shapes.get('Pinned_Sub').bounds)).toBe(true);
   });
 });
 

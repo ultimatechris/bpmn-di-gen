@@ -8,26 +8,27 @@ function finite(value: unknown): value is number {
 export function validateGeneratedDefinitions(definitions: any): void {
   const diagnostics: Diagnostic[] = [];
   const diagrams = definitions.diagrams ?? [];
-  if (diagrams.length !== 1 || !diagrams[0].plane) {
+  if (!diagrams.length || diagrams.some((diagram: any) => !diagram.plane)) {
     diagnostics.push({ severity: 'error', code: 'MISSING_DIAGRAM', message: 'Generated BPMN has no diagram plane.' });
   }
-  const plane = diagrams[0]?.plane;
-  const elements = plane?.planeElement ?? [];
+  const elements = diagrams.flatMap((diagram: any) => diagram.plane?.planeElement ?? []);
   const semanticIds = new Set<string>();
   const visited = new Set<any>();
-  const collect = (value: any): void => {
-    if (!value || typeof value !== 'object' || visited.has(value)) return;
+  const pending = [definitions];
+  while (pending.length) {
+    const value = pending.pop();
+    if (!value || typeof value !== 'object' || visited.has(value)) continue;
     visited.add(value);
     if (typeof value.id === 'string' && typeof value.$type === 'string' && !value.$type.startsWith('bpmndi:')) {
       semanticIds.add(value.id);
     }
     for (const [key, child] of Object.entries(value)) {
       if (key.startsWith('$') || key === 'di' || key === 'diagrams') continue;
-      if (Array.isArray(child)) child.forEach(collect);
-      else collect(child);
+      if (Array.isArray(child)) {
+        for (const item of child) pending.push(item);
+      } else pending.push(child);
     }
-  };
-  collect(definitions);
+  }
 
   for (const element of elements) {
     const semanticId = element.bpmnElement?.id;

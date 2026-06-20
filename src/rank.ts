@@ -6,6 +6,45 @@ interface Component {
   rank: number;
 }
 
+interface VisitFrame {
+  id: string;
+  nextTarget: number;
+  parentId?: string;
+}
+
+function pushReady(queue: number[], value: number, components: Component[]): void {
+  queue.push(value);
+  let index = queue.length - 1;
+  while (index > 0) {
+    const parent = Math.floor((index - 1) / 2);
+    if (components[queue[parent]].minimumOrder <= components[queue[index]].minimumOrder) break;
+    [queue[parent], queue[index]] = [queue[index], queue[parent]];
+    index = parent;
+  }
+}
+
+function popReady(queue: number[], components: Component[]): number | undefined {
+  const first = queue[0];
+  const last = queue.pop();
+  if (last === undefined || queue.length === 0) return first;
+  queue[0] = last;
+  let index = 0;
+  while (true) {
+    const left = index * 2 + 1;
+    const right = left + 1;
+    if (left >= queue.length) break;
+    let smallest = left;
+    if (right < queue.length
+      && components[queue[right]].minimumOrder < components[queue[left]].minimumOrder) {
+      smallest = right;
+    }
+    if (components[queue[index]].minimumOrder <= components[queue[smallest]].minimumOrder) break;
+    [queue[index], queue[smallest]] = [queue[smallest], queue[index]];
+    index = smallest;
+  }
+  return first;
+}
+
 export function assignRanks(nodes: LayoutNode[], edges: LayoutEdge[]): void {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const adjacency = new Map(nodes.map((node) => [node.id, [] as string[]]));
@@ -19,41 +58,54 @@ export function assignRanks(nodes: LayoutNode[], edges: LayoutEdge[]): void {
   const onStack = new Set<string>();
   const components: Component[] = [];
 
-  const visit = (id: string): void => {
+  const startVisit = (id: string, parentId?: string): VisitFrame => {
     indices.set(id, index);
     lowLinks.set(id, index);
     index += 1;
     stack.push(id);
     onStack.add(id);
-
-    for (const target of adjacency.get(id) ?? []) {
-      if (!indices.has(target)) {
-        visit(target);
-        lowLinks.set(id, Math.min(lowLinks.get(id)!, lowLinks.get(target)!));
-      } else if (onStack.has(target)) {
-        lowLinks.set(id, Math.min(lowLinks.get(id)!, indices.get(target)!));
-      }
-    }
-
-    if (lowLinks.get(id) === indices.get(id)) {
-      const ids: string[] = [];
-      let current: string;
-      do {
-        current = stack.pop()!;
-        onStack.delete(current);
-        ids.push(current);
-      } while (current !== id);
-      ids.sort((a, b) => nodeById.get(a)!.order - nodeById.get(b)!.order || a.localeCompare(b));
-      components.push({
-        ids,
-        minimumOrder: Math.min(...ids.map((item) => nodeById.get(item)!.order)),
-        rank: 0,
-      });
-    }
+    return { id, nextTarget: 0, parentId };
   };
 
   for (const node of [...nodes].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))) {
-    if (!indices.has(node.id)) visit(node.id);
+    if (indices.has(node.id)) continue;
+    const visitStack: VisitFrame[] = [startVisit(node.id)];
+    while (visitStack.length) {
+      const frame = visitStack[visitStack.length - 1];
+      const targets = adjacency.get(frame.id) ?? [];
+      if (frame.nextTarget < targets.length) {
+        const target = targets[frame.nextTarget++];
+        if (!indices.has(target)) {
+          visitStack.push(startVisit(target, frame.id));
+        } else if (onStack.has(target)) {
+          lowLinks.set(frame.id, Math.min(lowLinks.get(frame.id)!, indices.get(target)!));
+        }
+        continue;
+      }
+
+      visitStack.pop();
+      if (frame.parentId !== undefined) {
+        lowLinks.set(frame.parentId, Math.min(lowLinks.get(frame.parentId)!, lowLinks.get(frame.id)!));
+      }
+      if (lowLinks.get(frame.id) === indices.get(frame.id)) {
+        const ids: string[] = [];
+        let current: string;
+        do {
+          current = stack.pop()!;
+          onStack.delete(current);
+          ids.push(current);
+        } while (current !== frame.id);
+        ids.sort((a, b) => nodeById.get(a)!.order - nodeById.get(b)!.order || a.localeCompare(b));
+        components.push({
+          ids,
+          minimumOrder: ids.reduce(
+            (minimum, item) => Math.min(minimum, nodeById.get(item)!.order),
+            Number.POSITIVE_INFINITY,
+          ),
+          rank: 0,
+        });
+      }
+    }
   }
 
   const componentByNode = new Map<string, number>();
@@ -71,16 +123,17 @@ export function assignRanks(nodes: LayoutNode[], edges: LayoutEdge[]): void {
     }
   }
 
-  const queue = components.map((_, i) => i).filter((i) => indegree[i] === 0)
-    .sort((a, b) => components[a].minimumOrder - components[b].minimumOrder);
+  const queue: number[] = [];
+  components.forEach((_, componentIndex) => {
+    if (indegree[componentIndex] === 0) pushReady(queue, componentIndex, components);
+  });
   while (queue.length) {
-    const current = queue.shift()!;
+    const current = popReady(queue, components)!;
     for (const target of [...outgoing.get(current)!].sort((a, b) => components[a].minimumOrder - components[b].minimumOrder)) {
       components[target].rank = Math.max(components[target].rank, components[current].rank + 1);
       indegree[target] -= 1;
       if (indegree[target] === 0) {
-        queue.push(target);
-        queue.sort((a, b) => components[a].minimumOrder - components[b].minimumOrder);
+        pushReady(queue, target, components);
       }
     }
   }

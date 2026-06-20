@@ -159,8 +159,11 @@ function layoutGraph(graph: ProcessGraph, x: number, y: number, spacing: Spacing
   for (const lane of [...graph.lanes].sort((a, b) => b.depth - a.depth)) {
     if (!lane.childIds.length) continue;
     const children = lane.childIds.map((id) => laneById.get(id)!).filter((child) => child.bounds);
-    const top = Math.min(...children.map((child) => child.bounds!.y));
-    const bottom = Math.max(...children.map((child) => child.bounds!.y + child.bounds!.height));
+    const top = children.reduce((minimum, child) => Math.min(minimum, child.bounds!.y), Number.POSITIVE_INFINITY);
+    const bottom = children.reduce(
+      (maximum, child) => Math.max(maximum, child.bounds!.y + child.bounds!.height),
+      Number.NEGATIVE_INFINITY,
+    );
     const laneX = x + participantOffset + lane.depth * LANE_HEADER;
     lane.bounds = { x: laneX, y: top, width: right - laneX, height: bottom - top };
   }
@@ -192,8 +195,10 @@ function routeSequenceEdges(graph: ProcessGraph): void {
   const allBounds = [...boundsById.values()];
   const graphTop = graph.participant?.bounds?.y
     ?? (graph.lanes.length
-      ? Math.min(...graph.lanes.map((lane) => lane.bounds!.y))
-      : allBounds.length ? Math.min(...allBounds.map((b) => b.y)) - 35 : 0);
+      ? graph.lanes.reduce((minimum, lane) => Math.min(minimum, lane.bounds!.y), Number.POSITIVE_INFINITY)
+      : allBounds.length
+        ? allBounds.reduce((minimum, bounds) => Math.min(minimum, bounds.y), Number.POSITIVE_INFINITY) - 35
+        : 0);
 
   for (const edge of graph.edges) {
     const source = boundsById.get(edge.sourceId);
@@ -240,6 +245,8 @@ function routeSequenceEdges(graph: ProcessGraph): void {
 
 function endpointBounds(model: LayoutModel, id: string): Bounds | undefined {
   function nodeBounds(graph: ProcessGraph): Bounds | undefined {
+    const boundaryEvent = graph.boundaryEvents.find((event) => event.id === id);
+    if (boundaryEvent?.bounds) return boundaryEvent.bounds;
     for (const node of graph.nodes) {
       if (node.id === id && node.bounds) return node.bounds;
       if (node.subGraph) {
@@ -443,10 +450,21 @@ function placeGroups(graph: ProcessGraph, preserve: (id: string) => boolean = ()
       ? group.memberNodeIds.map((id) => boundsById.get(id)).filter((b): b is Bounds => !!b)
       : [...boundsById.values()]);
     if (!memberBounds.length) continue;
-    const left = Math.min(...memberBounds.map((b) => b.x)) - GROUP_PADDING;
-    const top = Math.min(...memberBounds.map((b) => b.y)) - GROUP_PADDING;
-    const right = Math.max(...memberBounds.map((b) => b.x + b.width)) + GROUP_PADDING;
-    const bottom = Math.max(...memberBounds.map((b) => b.y + b.height)) + GROUP_PADDING;
+    const extent = memberBounds.reduce((result, bounds) => ({
+      left: Math.min(result.left, bounds.x),
+      top: Math.min(result.top, bounds.y),
+      right: Math.max(result.right, bounds.x + bounds.width),
+      bottom: Math.max(result.bottom, bounds.y + bounds.height),
+    }), {
+      left: Number.POSITIVE_INFINITY,
+      top: Number.POSITIVE_INFINITY,
+      right: Number.NEGATIVE_INFINITY,
+      bottom: Number.NEGATIVE_INFINITY,
+    });
+    const left = extent.left - GROUP_PADDING;
+    const top = extent.top - GROUP_PADDING;
+    const right = extent.right + GROUP_PADDING;
+    const bottom = extent.bottom + GROUP_PADDING;
     group.bounds = { x: left, y: top, width: right - left, height: bottom - top };
   }
 }
@@ -466,6 +484,9 @@ function transposeGraph(graph: ProcessGraph): void {
   for (const ann of graph.annotations) { if (ann.bounds) ann.bounds = transposeBounds(ann.bounds); }
   for (const de of graph.dataElements) { if (de.bounds) de.bounds = transposeBounds(de.bounds); }
   for (const group of graph.groups) { if (group.bounds) group.bounds = transposeBounds(group.bounds); }
+  for (const edge of graph.edges) {
+    if (edge.points) edge.points = edge.points.map(transposePoint);
+  }
   for (const assoc of graph.associations) {
     if (assoc.points) assoc.points = assoc.points.map(transposePoint);
   }
@@ -538,33 +559,37 @@ export function layoutModel(model: LayoutModel, options: LayoutOptions): void {
     return aId.localeCompare(bId);
   });
 
-  // First pass: compute widths of process graphs
-  let maxWidth = 0;
-  for (const item of items) {
-    if (item.kind === 'graph') {
-      layoutGraph(item.graph, 50, 0, spacing);
-      if (item.graph.width > maxWidth) maxWidth = item.graph.width;
+  if (!model.collaboration) {
+    for (const graph of model.graphs) layoutGraph(graph, 50, 50, spacing);
+  } else {
+    // First pass: compute widths of process graphs.
+    let maxWidth = 0;
+    for (const item of items) {
+      if (item.kind === 'graph') {
+        layoutGraph(item.graph, 50, 0, spacing);
+        if (item.graph.width > maxWidth) maxWidth = item.graph.width;
+      }
     }
-  }
-  const blackBoxWidth = Math.max(maxWidth, 300);
+    const blackBoxWidth = Math.max(maxWidth, 300);
 
-  // Second pass: stack at correct y offsets
-  let y = 50;
-  for (const item of items) {
-    if (item.kind === 'graph') {
-      layoutGraph(item.graph, 50, y, spacing);
-      y += item.graph.height + spacing.poolGap;
-    } else {
-      item.participant.bounds = { x: 50, y, width: blackBoxWidth, height: BLACK_BOX_PARTICIPANT_HEIGHT };
-      y += BLACK_BOX_PARTICIPANT_HEIGHT + spacing.poolGap;
+    // Second pass: stack collaboration participants at their declared order.
+    let y = 50;
+    for (const item of items) {
+      if (item.kind === 'graph') {
+        layoutGraph(item.graph, 50, y, spacing);
+        y += item.graph.height + spacing.poolGap;
+      } else {
+        item.participant.bounds = { x: 50, y, width: blackBoxWidth, height: BLACK_BOX_PARTICIPANT_HEIGHT };
+        y += BLACK_BOX_PARTICIPANT_HEIGHT + spacing.poolGap;
+      }
     }
   }
 
   for (const graph of model.graphs) placeBoundaryEvents(graph);
   for (const graph of model.graphs) applySubgraphOffsets(graph);
   for (const graph of model.graphs) placeBoundaryEventsDeep(graph);
-  if (options.direction === 'top-to-bottom') applyTopToBottom(model);
   for (const graph of model.graphs) routeDeep(graph, spacing);
+  if (options.direction === 'top-to-bottom') applyTopToBottom(model);
   routeMessageEdges(model);
 }
 
@@ -652,7 +677,11 @@ export function applyDiPolicy(model: LayoutModel, di: ExistingDi, options: Layou
     if (entry?.bounds && preserve(participant.id)) participant.bounds = entry.bounds;
   }
 
-  for (const graph of model.graphs) refreshAfterBoundsRestore(graph, spacing, preserve);
+  for (const graph of model.graphs) {
+    if (options.direction === 'top-to-bottom') transposeGraph(graph);
+    refreshAfterBoundsRestore(graph, spacing, preserve);
+    if (options.direction === 'top-to-bottom') transposeGraph(graph);
+  }
   routeMessageEdges(model);
 
   if (restoreEdges) {

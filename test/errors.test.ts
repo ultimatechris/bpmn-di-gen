@@ -28,7 +28,9 @@ function inside(inner: any, outer: any): boolean {
 describe('diagnostics and errors', () => {
   it('rejects empty and malformed XML with a domain error', async () => {
     await expect(layoutBpmn('')).rejects.toBeInstanceOf(BpmnLayoutError);
-    await expect(layoutBpmn('<broken>')).rejects.toBeInstanceOf(BpmnLayoutError);
+    const malformed = layoutBpmn('<broken>');
+    await expect(malformed).rejects.toBeInstanceOf(BpmnLayoutError);
+    await expect(malformed).rejects.toHaveProperty('cause', expect.any(Error));
   });
 
   it('rejects documents without a layoutable process', async () => {
@@ -36,6 +38,38 @@ describe('diagnostics and errors', () => {
       <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
         id="Definitions_Empty" targetNamespace="http://example.com" />`;
     await expect(layoutBpmn(xml)).rejects.toThrow('No layoutable BPMN process');
+  });
+
+  it('rejects excessive subprocess nesting with a domain error', async () => {
+    let content = '<bpmn:task id="Nested_Leaf" />';
+    for (let depth = 0; depth < 258; depth += 1) {
+      content = `<bpmn:subProcess id="Nested_${depth}">${content}</bpmn:subProcess>`;
+    }
+    const xml = `<?xml version="1.0"?>
+      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        id="Definitions_Deep" targetNamespace="http://example.com">
+        <bpmn:process id="Process_Deep">${content}</bpmn:process>
+      </bpmn:definitions>`;
+
+    await expect(layoutBpmn(xml)).rejects.toMatchObject({
+      name: 'BpmnLayoutError',
+      message: expect.stringContaining('nesting exceeds the supported depth'),
+    });
+  });
+
+  it('validates pins at the JavaScript API boundary', async () => {
+    const xml = `<?xml version="1.0"?>
+      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        id="Definitions_Pins_Validation" targetNamespace="http://example.com">
+        <bpmn:process id="Process_Pins_Validation"><bpmn:startEvent id="Start" /></bpmn:process>
+      </bpmn:definitions>`;
+
+    await expect(layoutBpmn(xml, { pins: 'Start' } as any)).rejects.toThrow(
+      'The pins option must be an array of non-empty element IDs.',
+    );
+    await expect(layoutBpmn(xml, { pins: [''] })).rejects.toThrow(
+      'The pins option must be an array of non-empty element IDs.',
+    );
   });
 
   it('reports unassigned lane nodes without dropping them', async () => {

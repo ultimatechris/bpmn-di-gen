@@ -2,14 +2,20 @@ import type BpmnModdle from 'bpmn-moddle';
 import type { LayoutModel, ProcessGraph } from './model.js';
 import type { Bounds, LayoutOptions, Point } from './types.js';
 
-function collectIds(value: any, ids: Set<string>, visited: Set<any>): void {
-  if (!value || typeof value !== 'object' || visited.has(value)) return;
-  visited.add(value);
-  if (typeof value.id === 'string') ids.add(value.id);
-  for (const [key, child] of Object.entries(value)) {
-    if (key.startsWith('$') || key === 'di') continue;
-    if (Array.isArray(child)) child.forEach((item) => collectIds(item, ids, visited));
-    else collectIds(child, ids, visited);
+function collectIds(value: any, ids: Set<string>): void {
+  const visited = new Set<any>();
+  const pending = [value];
+  while (pending.length) {
+    const current = pending.pop();
+    if (!current || typeof current !== 'object' || visited.has(current)) continue;
+    visited.add(current);
+    if (typeof current.id === 'string') ids.add(current.id);
+    for (const [key, child] of Object.entries(current)) {
+      if (key.startsWith('$') || key === 'di') continue;
+      if (Array.isArray(child)) {
+        for (const item of child) pending.push(item);
+      } else pending.push(child);
+    }
   }
 }
 
@@ -31,17 +37,22 @@ function waypoint(moddle: BpmnModdle, point: Point): any {
 
 export function writeDiagramInterchange(moddle: BpmnModdle, model: LayoutModel, options: LayoutOptions): void {
   const used = new Set<string>();
-  collectIds(model.definitions, used, new Set());
-  const planeElements: any[] = [];
-  const diagram = moddle.create('bpmndi:BPMNDiagram', {
-    id: uniqueId('BPMNDiagram_AutoLayout', used),
-  });
-  const plane = moddle.create('bpmndi:BPMNPlane', {
-    id: uniqueId('BPMNPlane_AutoLayout', used),
-    bpmnElement: model.planeElement,
-    planeElement: planeElements,
-  });
-  diagram.plane = plane;
+  collectIds(model.definitions, used);
+  let planeElements: any[] = [];
+  const diagrams: any[] = [];
+
+  const createDiagram = (planeElement: any): void => {
+    planeElements = [];
+    const diagram = moddle.create('bpmndi:BPMNDiagram', {
+      id: uniqueId('BPMNDiagram_AutoLayout', used),
+    });
+    diagram.plane = moddle.create('bpmndi:BPMNPlane', {
+      id: uniqueId('BPMNPlane_AutoLayout', used),
+      bpmnElement: planeElement,
+      planeElement: planeElements,
+    });
+    diagrams.push(diagram);
+  };
 
   const addShape = (element: any, bounds: Bounds, extra: Record<string, unknown> = {}): void => {
     planeElements.push(moddle.create('bpmndi:BPMNShape', {
@@ -60,6 +71,9 @@ export function writeDiagramInterchange(moddle: BpmnModdle, model: LayoutModel, 
   };
 
   const emitGraph = (graph: ProcessGraph, isHorizontal: boolean): void => {
+    for (const lane of graph.lanes) {
+      if (lane.bounds) addShape(lane.element, lane.bounds, { isHorizontal });
+    }
     for (const node of graph.nodes) {
       if (node.subGraph) {
         addShape(node.element, node.bounds!, { isExpanded: true });
@@ -92,20 +106,25 @@ export function writeDiagramInterchange(moddle: BpmnModdle, model: LayoutModel, 
     }
   };
 
-  for (const graph of model.graphs) {
-    const isHorizontal = options.direction !== 'top-to-bottom';
-    if (graph.participant?.bounds) addShape(graph.participant.element, graph.participant.bounds, { isHorizontal });
-    for (const lane of graph.lanes) { if (lane.bounds) addShape(lane.element, lane.bounds, { isHorizontal }); }
-    emitGraph(graph, isHorizontal);
-  }
-  for (const edge of model.messageEdges) {
-    if (edge.points) addEdge(edge.element, edge.points);
-  }
-
   const isHorizontal = options.direction !== 'top-to-bottom';
-  for (const participant of model.blackBoxParticipants) {
-    if (participant.bounds) addShape(participant.element, participant.bounds, { isHorizontal });
+  if (model.collaboration) {
+    createDiagram(model.collaboration);
+    for (const graph of model.graphs) {
+      if (graph.participant?.bounds) addShape(graph.participant.element, graph.participant.bounds, { isHorizontal });
+      emitGraph(graph, isHorizontal);
+    }
+    for (const edge of model.messageEdges) {
+      if (edge.points) addEdge(edge.element, edge.points);
+    }
+    for (const participant of model.blackBoxParticipants) {
+      if (participant.bounds) addShape(participant.element, participant.bounds, { isHorizontal });
+    }
+  } else {
+    for (const graph of model.graphs) {
+      createDiagram(graph.process);
+      emitGraph(graph, isHorizontal);
+    }
   }
 
-  model.definitions.diagrams = [diagram];
+  model.definitions.diagrams = diagrams;
 }

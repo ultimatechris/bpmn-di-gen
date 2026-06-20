@@ -81,6 +81,22 @@ describe('single-process layout', () => {
     const vertical = await layoutBpmn(input, { direction: 'top-to-bottom', spacing: 'spacious' });
     expect(horizontal.metrics.width).toBeGreaterThan(horizontal.metrics.height);
     expect(vertical.metrics.height).toBeGreaterThan(vertical.metrics.width);
+
+    const definitions = await parse(vertical.xml);
+    const shapes = shapeMap(definitions);
+    const edges = planeElements(definitions)
+      .filter((element) => element.$type === 'bpmndi:BPMNEdge');
+    const firstForwardEdge = edges.find((edge) => edge.bpmnElement.id === 'Flow_1');
+    const source = shapes.get(firstForwardEdge.bpmnElement.sourceRef.id).bounds;
+    const target = shapes.get(firstForwardEdge.bpmnElement.targetRef.id).bounds;
+    expect(firstForwardEdge.waypoint[0]).toMatchObject({
+      x: source.x + source.width / 2,
+      y: source.y + source.height,
+    });
+    expect(firstForwardEdge.waypoint.at(-1)).toMatchObject({
+      x: target.x + target.width / 2,
+      y: target.y,
+    });
   });
 
   it('preserves arbitrary extension elements', async () => {
@@ -143,6 +159,30 @@ describe('single-process layout', () => {
   });
 });
 
+describe('multiple standalone processes', () => {
+  it('emits one correctly scoped diagram plane per process', async () => {
+    const input = `<?xml version="1.0"?>
+      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        id="Definitions_Multiple" targetNamespace="http://example.com">
+        <bpmn:process id="Process_A"><bpmn:startEvent id="Start_A" /></bpmn:process>
+        <bpmn:process id="Process_B"><bpmn:startEvent id="Start_B" /></bpmn:process>
+      </bpmn:definitions>`;
+
+    const definitions = await parse((await layoutBpmn(input)).xml);
+    expect(definitions.diagrams).toHaveLength(2);
+    expect(definitions.diagrams.map((diagram: any) => diagram.plane.bpmnElement.id)).toEqual([
+      'Process_A',
+      'Process_B',
+    ]);
+    expect(definitions.diagrams.map((diagram: any) => (
+      diagram.plane.planeElement.map((element: any) => element.bpmnElement.id)
+    ))).toEqual([['Start_A'], ['Start_B']]);
+    expect(definitions.diagrams.map((diagram: any) => (
+      diagram.plane.planeElement[0].bounds.y
+    ))).toEqual([102, 102]);
+  });
+});
+
 describe('multi-pool collaboration', () => {
   it('lays out three pools in collaboration order (black-box first)', async () => {
     const result = await layoutBpmn(await fixture('collaboration.bpmn'));
@@ -182,6 +222,65 @@ describe('multi-pool collaboration', () => {
     const first = await layoutBpmn(input);
     const second = await layoutBpmn(input);
     expect(first.xml).toBe(second.xml);
+  });
+
+  it('transposes black-box participant bounds for top-to-bottom layout', async () => {
+    const input = await fixture('collaboration.bpmn');
+    const horizontal = shapeMap(await parse((await layoutBpmn(input)).xml));
+    const vertical = shapeMap(await parse((await layoutBpmn(input, { direction: 'top-to-bottom' })).xml));
+    const horizontalBounds = horizontal.get('Participant_Customer').bounds;
+    const verticalBounds = vertical.get('Participant_Customer').bounds;
+
+    expect(verticalBounds.x).toBe(horizontalBounds.y);
+    expect(verticalBounds.y).toBe(horizontalBounds.x);
+    expect(verticalBounds.width).toBe(horizontalBounds.height);
+    expect(verticalBounds.height).toBe(horizontalBounds.width);
+  });
+
+  it('routes message flows whose endpoint is inside an expanded subprocess', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        id="Def_SubMessage" targetNamespace="http://example.com">
+        <bpmn:collaboration id="Collab_SubMessage">
+          <bpmn:participant id="Part_Process" processRef="Proc_SubMessage" />
+          <bpmn:participant id="Part_BlackBox" />
+          <bpmn:messageFlow id="MF_SubTask" sourceRef="SubTask_Message" targetRef="Part_BlackBox" />
+        </bpmn:collaboration>
+        <bpmn:process id="Proc_SubMessage">
+          <bpmn:subProcess id="Sub_Message">
+            <bpmn:task id="SubTask_Message" />
+          </bpmn:subProcess>
+        </bpmn:process>
+      </bpmn:definitions>`;
+    const result = await layoutBpmn(xml);
+    const edges = planeElements(await parse(result.xml))
+      .filter((element) => element.$type === 'bpmndi:BPMNEdge');
+    const messageEdge = edges.find((edge) => edge.bpmnElement.id === 'MF_SubTask');
+
+    expect(messageEdge?.waypoint.length).toBeGreaterThanOrEqual(2);
+    expect(result.diagnostics.filter((d) => d.code === 'UNROUTABLE_MESSAGE_FLOW')).toHaveLength(0);
+  });
+
+  it('routes message flows connected to boundary events', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        id="Def_BoundaryMessage" targetNamespace="http://example.com">
+        <bpmn:collaboration id="Collab_BoundaryMessage">
+          <bpmn:participant id="Part_Boundary" processRef="Proc_BoundaryMessage" />
+          <bpmn:participant id="Part_Receiver" />
+          <bpmn:messageFlow id="MF_Boundary" sourceRef="Boundary_Message" targetRef="Part_Receiver" />
+        </bpmn:collaboration>
+        <bpmn:process id="Proc_BoundaryMessage">
+          <bpmn:task id="Task_BoundaryMessage" />
+          <bpmn:boundaryEvent id="Boundary_Message" attachedToRef="Task_BoundaryMessage" />
+        </bpmn:process>
+      </bpmn:definitions>`;
+
+    const result = await layoutBpmn(xml);
+    const messageEdge = planeElements(await parse(result.xml))
+      .find((element) => element.bpmnElement?.id === 'MF_Boundary');
+    expect(messageEdge?.waypoint).toHaveLength(4);
+    expect(result.diagnostics.filter((d) => d.code === 'UNROUTABLE_MESSAGE_FLOW')).toHaveLength(0);
   });
 
   it('generates shapes for black-box participants', async () => {
@@ -313,6 +412,7 @@ describe('data elements', () => {
     const dataBounds = shapes.get('DataRef1').bounds;
     expect(dataBounds.width).toBeGreaterThan(0);
     expect(dataBounds.height).toBeGreaterThan(0);
+    expect(dataBounds.y).toBeGreaterThanOrEqual(0);
   });
 });
 
@@ -338,6 +438,9 @@ describe('expanded subprocesses', () => {
     const result = await layoutBpmn(xml);
     expect(result.diagnostics.filter((d) => d.code === 'UNSUPPORTED_ELEMENT')).toHaveLength(0);
     const definitions = await parse(result.xml);
+    const elements = planeElements(definitions);
+    expect(result.metrics.shapeCount).toBe(elements.filter((element) => element.$type === 'bpmndi:BPMNShape').length);
+    expect(result.metrics.edgeCount).toBe(elements.filter((element) => element.$type === 'bpmndi:BPMNEdge').length);
     const shapes = shapeMap(definitions);
     expect(shapes.has('SubProc1')).toBe(true);
     expect(shapes.get('SubProc1').isExpanded).toBe(true);
@@ -360,6 +463,32 @@ describe('expanded subprocesses', () => {
       expect(shapes.has(id)).toBe(true);
       expect(inside(shapes.get(id).bounds, spBounds)).toBe(true);
     }
+  });
+
+  it('emits and offsets lanes inside an expanded subprocess', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        id="Def_Sub_Lane" targetNamespace="http://example.com">
+        <bpmn:process id="Proc_Sub_Lane">
+          <bpmn:subProcess id="Sub_Lane">
+            <bpmn:laneSet id="Sub_LaneSet">
+              <bpmn:lane id="Inner_Lane"><bpmn:flowNodeRef>Inner_Task</bpmn:flowNodeRef></bpmn:lane>
+            </bpmn:laneSet>
+            <bpmn:task id="Inner_Task" />
+          </bpmn:subProcess>
+        </bpmn:process>
+      </bpmn:definitions>`;
+    const result = await layoutBpmn(xml);
+    const definitions = await parse(result.xml);
+    const shapes = shapeMap(definitions);
+    const elements = planeElements(definitions);
+
+    expect(shapes.has('Inner_Lane')).toBe(true);
+    expect(inside(shapes.get('Inner_Lane').bounds, shapes.get('Sub_Lane').bounds)).toBe(true);
+    expect(inside(shapes.get('Inner_Task').bounds, shapes.get('Inner_Lane').bounds)).toBe(true);
+    expect(result.metrics.shapeCount).toBe(
+      elements.filter((element) => element.$type === 'bpmndi:BPMNShape').length,
+    );
   });
 });
 
@@ -432,6 +561,9 @@ describe('artifacts fixture', () => {
     expect(result.diagnostics.filter((d) => d.severity === 'error')).toHaveLength(0);
     expect(result.diagnostics.filter((d) => d.code === 'UNSUPPORTED_ELEMENT')).toHaveLength(0);
     const definitions = await parse(result.xml);
+    const elements = planeElements(definitions);
+    expect(result.metrics.shapeCount).toBe(elements.filter((element) => element.$type === 'bpmndi:BPMNShape').length);
+    expect(result.metrics.edgeCount).toBe(elements.filter((element) => element.$type === 'bpmndi:BPMNEdge').length);
     const shapes = shapeMap(definitions);
 
     // expanded subprocess

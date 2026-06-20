@@ -17,3 +17,6 @@ Thumbs.db
 
 # Tool artifacts
 docs/superpowers/
+REVIEW.md
+.claude/
+standby.sh

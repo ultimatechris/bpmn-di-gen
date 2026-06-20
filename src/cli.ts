@@ -10,6 +10,7 @@ interface CliOptions {
   direction?: LayoutDirection;
   spacing?: LayoutSpacing;
   diPolicy?: DiPolicy;
+  pins?: string[];
 }
 
 function usage(): string {
@@ -20,24 +21,39 @@ Options:
   --direction <direction>   left-to-right (default) or top-to-bottom
   --spacing <spacing>       compact, normal (default), or spacious
   --di-policy <policy>      replace (default), complete, or repair
+  --pins <id1,id2,...>      Preserve existing DI for these element IDs
   -h, --help                Show this help`;
 }
 
 function parseArguments(args: string[]): CliOptions {
   const options: CliOptions = {};
+  const nextValue = (index: number, option: string): string => {
+    const value = args[index + 1];
+    if (!value || value.startsWith('-')) {
+      throw new Error(`Missing value for ${option}`);
+    }
+    return value;
+  };
   for (let index = 0; index < args.length; index += 1) {
     const value = args[index];
     if (value === '-h' || value === '--help') {
       process.stdout.write(`${usage()}\n`);
       process.exit(0);
     } else if (value === '-o' || value === '--output') {
-      options.output = args[++index];
+      options.output = nextValue(index, value);
+      index += 1;
     } else if (value === '--direction') {
-      options.direction = args[++index] as LayoutDirection;
+      options.direction = nextValue(index, value) as LayoutDirection;
+      index += 1;
     } else if (value === '--spacing') {
-      options.spacing = args[++index] as LayoutSpacing;
+      options.spacing = nextValue(index, value) as LayoutSpacing;
+      index += 1;
     } else if (value === '--di-policy') {
-      options.diPolicy = args[++index] as DiPolicy;
+      options.diPolicy = nextValue(index, value) as DiPolicy;
+      index += 1;
+    } else if (value === '--pins') {
+      options.pins = nextValue(index, value).split(',').map((id) => id.trim()).filter(Boolean);
+      index += 1;
     } else if (value.startsWith('-')) {
       throw new Error(`Unknown option: ${value}`);
     } else if (!options.input) {
@@ -58,6 +74,7 @@ async function main(): Promise<void> {
       direction: options.direction,
       spacing: options.spacing,
       diPolicy: options.diPolicy,
+      pins: options.pins,
     });
     await writeFile(options.output!, result.xml, 'utf8');
     process.stderr.write(

@@ -13,12 +13,14 @@ export function readExistingDi(definitions: any): Map<string, ExistingDiElement>
       if (!elementId) continue;
       if (element.$type === 'bpmndi:BPMNShape') {
         const b = element.bounds;
-        if (b && b.width > 0 && b.height > 0 && Number.isFinite(b.x) && Number.isFinite(b.y)) {
+        if (b && b.width > 0 && b.height > 0
+          && Number.isFinite(b.x) && Number.isFinite(b.y)
+          && Number.isFinite(b.width) && Number.isFinite(b.height)) {
           result.set(elementId, { bounds: { x: b.x, y: b.y, width: b.width, height: b.height } });
         }
       } else if (element.$type === 'bpmndi:BPMNEdge') {
         const points: Point[] = (element.waypoint ?? []).map((wp: any) => ({ x: wp.x, y: wp.y }));
-        if (points.length >= 2) {
+        if (points.length >= 2 && points.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))) {
           result.set(elementId, { points });
         }
       }

@@ -34,7 +34,7 @@ function effectiveLeaf(node: LayoutNode, leaves: LayoutLane[], byId: Map<string,
 }
 
 function columnWidth(nodes: LayoutNode[]): number {
-  return Math.max(100, ...nodes.map((node) => node.width));
+  return nodes.reduce((maximum, node) => Math.max(maximum, node.width), 100);
 }
 
 function presizeSubprocesses(graph: ProcessGraph, spacing: Spacing): void {
@@ -53,9 +53,10 @@ function layoutGraph(graph: ProcessGraph, x: number, y: number, spacing: Spacing
   const nodeIds = new Set(graph.nodes.map((n) => n.id));
   const rankEdges = graph.edges.filter((e) => nodeIds.has(e.sourceId) && nodeIds.has(e.targetId));
   assignRanks(graph.nodes, rankEdges);
-  const maxRank = Math.max(0, ...graph.nodes.map((node) => node.rank));
-  const stepX = columnWidth(graph.nodes) + spacing.rankGap;
-  const contentWidth = maxRank * stepX + columnWidth(graph.nodes) + spacing.paddingX * 2;
+  const maxRank = graph.nodes.reduce((maximum, node) => Math.max(maximum, node.rank), 0);
+  const nodeColumnWidth = columnWidth(graph.nodes);
+  const stepX = nodeColumnWidth + spacing.rankGap;
+  const contentWidth = maxRank * stepX + nodeColumnWidth + spacing.paddingX * 2;
 
   if (!graph.lanes.length) {
     const byRank = new Map<number, LayoutNode[]>();
@@ -64,9 +65,10 @@ function layoutGraph(graph: ProcessGraph, x: number, y: number, spacing: Spacing
       group.push(node);
       byRank.set(node.rank, group);
     }
-    const maximumColumnHeight = Math.max(0, ...[...byRank.values()].map((nodes) =>
+    const maximumColumnHeight = [...byRank.values()].reduce((maximum, nodes) => Math.max(
+      maximum,
       nodes.reduce((total, node) => total + node.height, 0) + Math.max(0, nodes.length - 1) * spacing.nodeGap,
-    ));
+    ), 0);
     const contentHeight = Math.max(spacing.laneMinHeight, maximumColumnHeight + spacing.paddingY * 2);
     const poolOffset = graph.participant ? POOL_HEADER : 0;
     const contentX = x + poolOffset + spacing.paddingX;
@@ -77,7 +79,7 @@ function layoutGraph(graph: ProcessGraph, x: number, y: number, spacing: Spacing
       let nodeY = y + (contentHeight - totalHeight) / 2;
       for (const node of nodes) {
         node.bounds = {
-          x: contentX + rank * stepX + (columnWidth(graph.nodes) - node.width) / 2,
+          x: contentX + rank * stepX + (nodeColumnWidth - node.width) / 2,
           y: nodeY,
           width: node.width,
           height: node.height,
@@ -93,23 +95,30 @@ function layoutGraph(graph: ProcessGraph, x: number, y: number, spacing: Spacing
 
   const laneById = new Map(graph.lanes.map((lane) => [lane.id, lane]));
   const leaves = graph.lanes.filter((lane) => !lane.childIds.length);
-  const maximumDepth = Math.max(...graph.lanes.map((lane) => lane.depth));
+  const maximumDepth = graph.lanes.reduce((maximum, lane) => Math.max(maximum, lane.depth), 0);
   const participantOffset = graph.participant ? POOL_HEADER : 0;
   const contentX = x + participantOffset + (maximumDepth + 1) * LANE_HEADER + spacing.paddingX;
   const right = contentX + contentWidth - spacing.paddingX;
   const leafHeights = new Map<string, number>();
+  const nodesByLeaf = new Map(leaves.map((leaf) => [leaf.id, [] as LayoutNode[]]));
+
+  for (const node of graph.nodes) {
+    const leaf = effectiveLeaf(node, leaves, laneById);
+    nodesByLeaf.get(leaf.id)!.push(node);
+  }
 
   for (const leaf of leaves) {
-    const laneNodes = graph.nodes.filter((node) => effectiveLeaf(node, leaves, laneById).id === leaf.id);
+    const laneNodes = nodesByLeaf.get(leaf.id)!;
     const rankCounts = new Map<number, LayoutNode[]>();
     for (const node of laneNodes) {
       const group = rankCounts.get(node.rank) ?? [];
       group.push(node);
       rankCounts.set(node.rank, group);
     }
-    const needed = Math.max(0, ...[...rankCounts.values()].map((nodes) =>
+    const needed = [...rankCounts.values()].reduce((maximum, nodes) => Math.max(
+      maximum,
       nodes.reduce((total, node) => total + node.height, 0) + Math.max(0, nodes.length - 1) * spacing.nodeGap,
-    ));
+    ), 0);
     leafHeights.set(leaf.id, Math.max(spacing.laneMinHeight, needed + spacing.paddingY * 2));
   }
 
@@ -122,7 +131,7 @@ function layoutGraph(graph: ProcessGraph, x: number, y: number, spacing: Spacing
       width: right - (x + participantOffset + leaf.depth * LANE_HEADER),
       height,
     };
-    const laneNodes = graph.nodes.filter((node) => effectiveLeaf(node, leaves, laneById).id === leaf.id);
+    const laneNodes = nodesByLeaf.get(leaf.id)!;
     const rankGroups = new Map<number, LayoutNode[]>();
     for (const node of laneNodes) {
       const group = rankGroups.get(node.rank) ?? [];
@@ -136,7 +145,7 @@ function layoutGraph(graph: ProcessGraph, x: number, y: number, spacing: Spacing
       let nodeY = laneY + (height - totalHeight) / 2;
       for (const node of nodes) {
         node.bounds = {
-          x: contentX + rank * stepX + (columnWidth(graph.nodes) - node.width) / 2,
+          x: contentX + rank * stepX + (nodeColumnWidth - node.width) / 2,
           y: nodeY,
           width: node.width,
           height: node.height,
@@ -230,9 +239,20 @@ function routeSequenceEdges(graph: ProcessGraph): void {
 }
 
 function endpointBounds(model: LayoutModel, id: string): Bounds | undefined {
+  function nodeBounds(graph: ProcessGraph): Bounds | undefined {
+    for (const node of graph.nodes) {
+      if (node.id === id && node.bounds) return node.bounds;
+      if (node.subGraph) {
+        const bounds = nodeBounds(node.subGraph);
+        if (bounds) return bounds;
+      }
+    }
+    return undefined;
+  }
+
   for (const graph of model.graphs) {
-    const node = graph.nodes.find((item) => item.id === id);
-    if (node?.bounds) return node.bounds;
+    const bounds = nodeBounds(graph);
+    if (bounds) return bounds;
     if (graph.participant?.id === id) return graph.participant.bounds;
   }
   const blackBox = model.blackBoxParticipants.find((p) => p.id === id);
@@ -265,16 +285,21 @@ function transposeBounds(bounds: Bounds): Bounds {
   return { x: bounds.y, y: bounds.x, width: bounds.height, height: bounds.width };
 }
 
-function placeDataElements(graph: ProcessGraph, spacing: Spacing): void {
+function placeDataElements(
+  graph: ProcessGraph,
+  spacing: Spacing,
+  preserve: (id: string) => boolean = () => false,
+): void {
   const boundsById = new Map<string, Bounds>();
   for (const node of graph.nodes) { if (node.bounds) boundsById.set(node.id, node.bounds); }
 
   for (const de of graph.dataElements) {
+    if (preserve(de.id)) continue;
     const hostId = de.connectedNodeIds[0];
     const hostBounds = hostId ? boundsById.get(hostId) : undefined;
     de.bounds = {
       x: hostBounds ? hostBounds.x + hostBounds.width / 2 - de.width / 2 : 50,
-      y: hostBounds ? hostBounds.y - de.height - spacing.nodeGap : 50,
+      y: hostBounds ? Math.max(0, hostBounds.y - de.height - spacing.nodeGap) : 50,
       width: de.width,
       height: de.height,
     };
@@ -297,7 +322,11 @@ function routeDataAssociations(graph: ProcessGraph): void {
   }
 }
 
-function placeAnnotations(graph: ProcessGraph, spacing: Spacing): void {
+function placeAnnotations(
+  graph: ProcessGraph,
+  spacing: Spacing,
+  preserve: (id: string) => boolean = () => false,
+): void {
   const boundsById = new Map<string, Bounds>();
   for (const node of graph.nodes) { if (node.bounds) boundsById.set(node.id, node.bounds); }
   for (const be of graph.boundaryEvents) { if (be.bounds) boundsById.set(be.id, be.bounds); }
@@ -307,6 +336,10 @@ function placeAnnotations(graph: ProcessGraph, spacing: Spacing): void {
   let annotationY = graph.participant?.bounds?.y ?? (graph.nodes[0]?.bounds?.y ?? 50);
 
   for (const ann of graph.annotations) {
+    if (preserve(ann.id)) {
+      if (ann.bounds) annotationY = Math.max(annotationY, ann.bounds.y + ann.bounds.height + spacing.nodeGap);
+      continue;
+    }
     const connectedBounds = ann.connectedNodeId ? boundsById.get(ann.connectedNodeId) : undefined;
     ann.bounds = {
       x: rightEdge + spacing.rankGap,
@@ -336,9 +369,10 @@ function routeAssociations(graph: ProcessGraph): void {
   }
 }
 
-function placeBoundaryEvents(graph: ProcessGraph): void {
+function placeBoundaryEvents(graph: ProcessGraph, preserve: (id: string) => boolean = () => false): void {
   const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
   for (const be of graph.boundaryEvents) {
+    if (preserve(be.id)) continue;
     const host = nodeById.get(be.hostId);
     if (!host?.bounds) continue;
     be.bounds = {
@@ -356,6 +390,9 @@ function shiftGraph(graph: ProcessGraph, ox: number, oy: number): void {
   }
   for (const be of graph.boundaryEvents) {
     if (be.bounds) { be.bounds.x += ox; be.bounds.y += oy; }
+  }
+  for (const lane of graph.lanes) {
+    if (lane.bounds) { lane.bounds.x += ox; lane.bounds.y += oy; }
   }
   for (const edge of graph.edges) {
     if (edge.points) edge.points = edge.points.map((p) => ({ x: p.x + ox, y: p.y + oy }));
@@ -377,6 +414,13 @@ function shiftGraph(graph: ProcessGraph, ox: number, oy: number): void {
   }
 }
 
+function shiftGraphDeep(graph: ProcessGraph, ox: number, oy: number): void {
+  shiftGraph(graph, ox, oy);
+  for (const node of graph.nodes) {
+    if (node.subGraph) shiftGraphDeep(node.subGraph, ox, oy);
+  }
+}
+
 function applySubgraphOffsets(graph: ProcessGraph): void {
   for (const node of graph.nodes) {
     if (!node.subGraph || !node.bounds) continue;
@@ -389,11 +433,12 @@ function applySubgraphOffsets(graph: ProcessGraph): void {
 
 const GROUP_PADDING = 20;
 
-function placeGroups(graph: ProcessGraph): void {
+function placeGroups(graph: ProcessGraph, preserve: (id: string) => boolean = () => false): void {
   const boundsById = new Map<string, Bounds>();
   for (const node of graph.nodes) { if (node.bounds) boundsById.set(node.id, node.bounds); }
 
   for (const group of graph.groups) {
+    if (preserve(group.id)) continue;
     const memberBounds = (group.memberNodeIds.length
       ? group.memberNodeIds.map((id) => boundsById.get(id)).filter((b): b is Bounds => !!b)
       : [...boundsById.values()]);
@@ -432,6 +477,9 @@ function transposeGraph(graph: ProcessGraph): void {
 
 function applyTopToBottom(model: LayoutModel): void {
   for (const graph of model.graphs) transposeGraph(graph);
+  for (const participant of model.blackBoxParticipants) {
+    if (participant.bounds) participant.bounds = transposeBounds(participant.bounds);
+  }
 }
 
 function placeBoundaryEventsDeep(graph: ProcessGraph): void {
@@ -449,6 +497,23 @@ function routeDeep(graph: ProcessGraph, spacing: Spacing): void {
   placeGroups(graph);
   for (const node of graph.nodes) {
     if (node.subGraph) routeDeep(node.subGraph, spacing);
+  }
+}
+
+function refreshAfterBoundsRestore(
+  graph: ProcessGraph,
+  spacing: Spacing,
+  preserve: (id: string) => boolean,
+): void {
+  placeBoundaryEvents(graph, preserve);
+  placeAnnotations(graph, spacing, preserve);
+  placeDataElements(graph, spacing, preserve);
+  placeGroups(graph, preserve);
+  routeSequenceEdges(graph);
+  routeAssociations(graph);
+  routeDataAssociations(graph);
+  for (const node of graph.nodes) {
+    if (node.subGraph) refreshAfterBoundsRestore(node.subGraph, spacing, preserve);
   }
 }
 
@@ -509,13 +574,17 @@ function applyGraphDi(
   graph: ProcessGraph,
   di: ExistingDi,
   preserve: (id: string) => boolean,
-  preserveEdge: (id: string) => boolean,
-  restoreEdges: boolean,
 ): void {
   for (const node of graph.nodes) {
     const entry = di.get(node.id);
-    if (entry?.bounds && preserve(node.id)) node.bounds = entry.bounds;
-    if (node.subGraph) applyGraphDi(node.subGraph, di, preserve, preserveEdge, restoreEdges);
+    if (entry?.bounds && preserve(node.id)) {
+      const previous = node.bounds;
+      node.bounds = entry.bounds;
+      if (node.subGraph && previous) {
+        shiftGraphDeep(node.subGraph, entry.bounds.x - previous.x, entry.bounds.y - previous.y);
+      }
+    }
+    if (node.subGraph) applyGraphDi(node.subGraph, di, preserve);
   }
   for (const be of graph.boundaryEvents) {
     const entry = di.get(be.id);
@@ -541,11 +610,15 @@ function applyGraphDi(
     const entry = di.get(group.id);
     if (entry?.bounds && preserve(group.id)) group.bounds = entry.bounds;
   }
-  if (restoreEdges) {
-    for (const edge of graph.edges) {
-      const entry = di.get(edge.id);
-      if (entry?.points && preserveEdge(edge.id)) edge.points = entry.points;
-    }
+}
+
+function restoreGraphEdges(graph: ProcessGraph, di: ExistingDi, preserveEdge: (id: string) => boolean): void {
+  for (const edge of [...graph.edges, ...graph.associations, ...graph.dataAssociations]) {
+    const entry = di.get(edge.id);
+    if (entry?.points && preserveEdge(edge.id)) edge.points = entry.points;
+  }
+  for (const node of graph.nodes) {
+    if (node.subGraph) restoreGraphEdges(node.subGraph, di, preserveEdge);
   }
 }
 
@@ -573,33 +646,20 @@ export function applyDiPolicy(model: LayoutModel, di: ExistingDi, options: Layou
   }
 
   const restoreEdges = policy === 'complete' || hasPins;
-  for (const graph of model.graphs) applyGraphDi(graph, di, preserve, preserveEdge, restoreEdges);
+  for (const graph of model.graphs) applyGraphDi(graph, di, preserve);
   for (const participant of model.blackBoxParticipants) {
     const entry = di.get(participant.id);
     if (entry?.bounds && preserve(participant.id)) participant.bounds = entry.bounds;
   }
+
+  for (const graph of model.graphs) refreshAfterBoundsRestore(graph, spacing, preserve);
+  routeMessageEdges(model);
+
   if (restoreEdges) {
+    for (const graph of model.graphs) restoreGraphEdges(graph, di, preserveEdge);
     for (const edge of model.messageEdges) {
       const entry = di.get(edge.id);
       if (entry?.points && preserveEdge(edge.id)) edge.points = entry.points;
-    }
-  }
-
-  if (policy === 'repair') {
-    type BoundsMap = Map<string, Bounds>;
-    const saveBounds = (items: Array<{ id: string; bounds?: Bounds }>): BoundsMap =>
-      new Map(items.filter((it) => it.bounds && di.get(it.id)?.bounds).map((it) => [it.id, it.bounds!]));
-    const savedAnnotations: BoundsMap[] = model.graphs.map((g) => saveBounds(g.annotations));
-    const savedDataElements: BoundsMap[] = model.graphs.map((g) => saveBounds(g.dataElements));
-    const savedGroups: BoundsMap[] = model.graphs.map((g) => saveBounds(g.groups));
-
-    for (const graph of model.graphs) routeDeep(graph, spacing);
-    routeMessageEdges(model);
-
-    for (const [i, graph] of model.graphs.entries()) {
-      for (const ann of graph.annotations) { const b = savedAnnotations[i].get(ann.id); if (b) ann.bounds = b; }
-      for (const de of graph.dataElements) { const b = savedDataElements[i].get(de.id); if (b) de.bounds = b; }
-      for (const group of graph.groups) { const b = savedGroups[i].get(group.id); if (b) group.bounds = b; }
     }
   }
 }

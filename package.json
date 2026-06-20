@@ -23,9 +23,16 @@
   },
   "keywords": [
     "bpmn",
+    "bpmn2",
     "bpmndi",
+    "diagram-interchange",
     "auto-layout",
-    "swimlanes"
+    "layout",
+    "swimlanes",
+    "process-mining",
+    "camunda",
+    "flowable",
+    "activiti"
   ],
   "license": "AGPL-3.0-only",
   "dependencies": {

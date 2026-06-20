@@ -4,13 +4,22 @@ Add readable layout to BPMN 2.0 files that have none.
 
 BPMN files produced by execution engines, process-mining systems, AI generators,
 and other automated tools often contain no visual coordinates. `bpmn-di-gen`
-computes a standards-compliant Diagram Interchange layout and writes it back into
-the same `.bpmn` file — leaving every semantic element untouched.
+computes a standards-compliant Diagram Interchange (DI) layout and writes it back
+into the same `.bpmn` file — leaving every semantic element untouched.
 
 ```
 input.bpmn  ──▶  bpmn-di-gen  ──▶  output.bpmn
 (no layout)                         (opens in any BPMN tool)
 ```
+
+## When do you need this?
+
+- Your `.bpmn` file opens as a blank canvas in Camunda Modeler, bpmn.io, or Signavio
+- A process-mining tool (Celonis, ProM, PM4Py) exported a BPMN file without layout
+- An AI tool or LLM generated BPMN XML with no `BPMNShape`/`BPMNEdge` elements
+- Camunda, Flowable, or Activiti exported a deployed process definition that has no DI
+- You're building a pipeline that produces BPMN programmatically and need to render it
+- Your file has partial layout (some shapes placed, others missing) and you want to fill in the gaps
 
 ## Install
 
@@ -118,5 +127,4 @@ npm run test:visual:update
 
 ## License
 
-[PolyForm Noncommercial 1.0](LICENSE) — free to use, modify, and share for any
-non-commercial purpose. Commercial use requires a separate agreement.
+[AGPL-3.0](LICENSE)

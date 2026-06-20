@@ -176,6 +176,14 @@ function buildGraph(process: any, participant: LayoutParticipant | undefined, di
               && el.categoryValueRef.some((cv: any) => cv === groupCv || cv.id === groupCv?.id))
             .map((el: any) => el.id)
         : [];
+      if (groupCv && !memberNodeIds.length) {
+        diagnostics.push({
+          severity: 'warning',
+          code: 'UNRESOLVED_GROUP_MEMBERS',
+          message: `Group ${artifact.id} has a categoryValueRef but no flow elements matched; it will encompass all nodes.`,
+          elementId: artifact.id,
+        });
+      }
       groups.push({ id: artifact.id, element: artifact, memberNodeIds });
     } else {
       diagnostics.push({

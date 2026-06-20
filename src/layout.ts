@@ -40,6 +40,7 @@ function columnWidth(nodes: LayoutNode[]): number {
 function presizeSubprocesses(graph: ProcessGraph, spacing: Spacing): void {
   for (const node of graph.nodes) {
     if (!node.subGraph) continue;
+    if (node.subGraph.width > 0) continue;
     presizeSubprocesses(node.subGraph, spacing);
     layoutGraph(node.subGraph, 0, 0, spacing);
     node.width = node.subGraph.width + SUBPROCESS_PADDING * 2;
@@ -300,6 +301,7 @@ function placeAnnotations(graph: ProcessGraph, spacing: Spacing): void {
   const boundsById = new Map<string, Bounds>();
   for (const node of graph.nodes) { if (node.bounds) boundsById.set(node.id, node.bounds); }
   for (const be of graph.boundaryEvents) { if (be.bounds) boundsById.set(be.id, be.bounds); }
+  for (const de of graph.dataElements) { if (de.bounds) boundsById.set(de.id, de.bounds); }
 
   const rightEdge = graph.nodes.reduce((max, n) => n.bounds ? Math.max(max, n.bounds.x + n.bounds.width) : max, 50);
   let annotationY = graph.participant?.bounds?.y ?? (graph.nodes[0]?.bounds?.y ?? 50);
@@ -321,6 +323,7 @@ function routeAssociations(graph: ProcessGraph): void {
   for (const node of graph.nodes) { if (node.bounds) boundsById.set(node.id, node.bounds); }
   for (const be of graph.boundaryEvents) { if (be.bounds) boundsById.set(be.id, be.bounds); }
   for (const ann of graph.annotations) { if (ann.bounds) boundsById.set(ann.id, ann.bounds); }
+  for (const de of graph.dataElements) { if (de.bounds) boundsById.set(de.id, de.bounds); }
 
   for (const assoc of graph.associations) {
     const source = boundsById.get(assoc.sourceId);
@@ -403,14 +406,27 @@ function placeGroups(graph: ProcessGraph): void {
   }
 }
 
+function transposePoint(p: Point): Point {
+  return { x: p.y, y: p.x };
+}
+
 function transposeGraph(graph: ProcessGraph): void {
   for (const node of graph.nodes) {
-    node.bounds = transposeBounds(node.bounds!);
+    if (node.bounds) node.bounds = transposeBounds(node.bounds);
     if (node.subGraph) transposeGraph(node.subGraph);
   }
   for (const be of graph.boundaryEvents) { if (be.bounds) be.bounds = transposeBounds(be.bounds); }
-  for (const lane of graph.lanes) lane.bounds = transposeBounds(lane.bounds!);
+  for (const lane of graph.lanes) { if (lane.bounds) lane.bounds = transposeBounds(lane.bounds); }
   if (graph.participant?.bounds) graph.participant.bounds = transposeBounds(graph.participant.bounds);
+  for (const ann of graph.annotations) { if (ann.bounds) ann.bounds = transposeBounds(ann.bounds); }
+  for (const de of graph.dataElements) { if (de.bounds) de.bounds = transposeBounds(de.bounds); }
+  for (const group of graph.groups) { if (group.bounds) group.bounds = transposeBounds(group.bounds); }
+  for (const assoc of graph.associations) {
+    if (assoc.points) assoc.points = assoc.points.map(transposePoint);
+  }
+  for (const da of graph.dataAssociations) {
+    if (da.points) da.points = da.points.map(transposePoint);
+  }
   [graph.width, graph.height] = [graph.height, graph.width];
 }
 
@@ -449,7 +465,13 @@ export function layoutModel(model: LayoutModel, options: LayoutOptions): void {
       order: participant.participantOrder,
     })),
   ];
-  items.sort((a, b) => a.order - b.order);
+  items.sort((a, b) => {
+    const diff = a.order - b.order;
+    if (diff !== 0) return diff;
+    const aId = a.kind === 'graph' ? (a.graph.participant?.id ?? '') : a.participant.id;
+    const bId = b.kind === 'graph' ? (b.graph.participant?.id ?? '') : b.participant.id;
+    return aId.localeCompare(bId);
+  });
 
   // First pass: compute widths of process graphs
   let maxWidth = 0;
@@ -483,11 +505,17 @@ export function layoutModel(model: LayoutModel, options: LayoutOptions): void {
 
 type ExistingDi = Map<string, { bounds?: Bounds; points?: Point[] }>;
 
-function applyGraphDi(graph: ProcessGraph, di: ExistingDi, preserve: (id: string) => boolean, restoreEdges: boolean): void {
+function applyGraphDi(
+  graph: ProcessGraph,
+  di: ExistingDi,
+  preserve: (id: string) => boolean,
+  preserveEdge: (id: string) => boolean,
+  restoreEdges: boolean,
+): void {
   for (const node of graph.nodes) {
     const entry = di.get(node.id);
     if (entry?.bounds && preserve(node.id)) node.bounds = entry.bounds;
-    if (node.subGraph) applyGraphDi(node.subGraph, di, preserve, restoreEdges);
+    if (node.subGraph) applyGraphDi(node.subGraph, di, preserve, preserveEdge, restoreEdges);
   }
   for (const be of graph.boundaryEvents) {
     const entry = di.get(be.id);
@@ -516,7 +544,7 @@ function applyGraphDi(graph: ProcessGraph, di: ExistingDi, preserve: (id: string
   if (restoreEdges) {
     for (const edge of graph.edges) {
       const entry = di.get(edge.id);
-      if (entry?.points && preserve(edge.id)) edge.points = entry.points;
+      if (entry?.points && preserveEdge(edge.id)) edge.points = entry.points;
     }
   }
 }
@@ -538,8 +566,14 @@ export function applyDiPolicy(model: LayoutModel, di: ExistingDi, options: Layou
     return true; // complete
   }
 
-  const restoreEdges = policy === 'complete';
-  for (const graph of model.graphs) applyGraphDi(graph, di, preserve, restoreEdges);
+  function preserveEdge(id: string): boolean {
+    if (pins.has(id)) return true;
+    if (policy !== 'complete') return false;
+    return !!di.get(id)?.points;
+  }
+
+  const restoreEdges = policy === 'complete' || hasPins;
+  for (const graph of model.graphs) applyGraphDi(graph, di, preserve, preserveEdge, restoreEdges);
   for (const participant of model.blackBoxParticipants) {
     const entry = di.get(participant.id);
     if (entry?.bounds && preserve(participant.id)) participant.bounds = entry.bounds;
@@ -547,13 +581,25 @@ export function applyDiPolicy(model: LayoutModel, di: ExistingDi, options: Layou
   if (restoreEdges) {
     for (const edge of model.messageEdges) {
       const entry = di.get(edge.id);
-      if (entry?.points && preserve(edge.id)) edge.points = entry.points;
+      if (entry?.points && preserveEdge(edge.id)) edge.points = entry.points;
     }
   }
 
-  // repair: re-route all edges now that shape positions are restored
   if (policy === 'repair') {
+    type BoundsMap = Map<string, Bounds>;
+    const saveBounds = (items: Array<{ id: string; bounds?: Bounds }>): BoundsMap =>
+      new Map(items.filter((it) => it.bounds && di.get(it.id)?.bounds).map((it) => [it.id, it.bounds!]));
+    const savedAnnotations: BoundsMap[] = model.graphs.map((g) => saveBounds(g.annotations));
+    const savedDataElements: BoundsMap[] = model.graphs.map((g) => saveBounds(g.dataElements));
+    const savedGroups: BoundsMap[] = model.graphs.map((g) => saveBounds(g.groups));
+
     for (const graph of model.graphs) routeDeep(graph, spacing);
     routeMessageEdges(model);
+
+    for (const [i, graph] of model.graphs.entries()) {
+      for (const ann of graph.annotations) { const b = savedAnnotations[i].get(ann.id); if (b) ann.bounds = b; }
+      for (const de of graph.dataElements) { const b = savedDataElements[i].get(de.id); if (b) de.bounds = b; }
+      for (const group of graph.groups) { const b = savedGroups[i].get(group.id); if (b) group.bounds = b; }
+    }
   }
 }

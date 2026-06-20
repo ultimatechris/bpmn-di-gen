@@ -13,7 +13,7 @@ export function readExistingDi(definitions: any): Map<string, ExistingDiElement>
       if (!elementId) continue;
       if (element.$type === 'bpmndi:BPMNShape') {
         const b = element.bounds;
-        if (b && b.width > 0 && b.height > 0) {
+        if (b && b.width > 0 && b.height > 0 && Number.isFinite(b.x) && Number.isFinite(b.y)) {
           result.set(elementId, { bounds: { x: b.x, y: b.y, width: b.width, height: b.height } });
         }
       } else if (element.$type === 'bpmndi:BPMNEdge') {

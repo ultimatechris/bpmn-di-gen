@@ -70,7 +70,7 @@ export function writeDiagramInterchange(moddle: BpmnModdle, model: LayoutModel, 
       }
     }
     for (const be of graph.boundaryEvents) {
-      if (be.bounds) addShape(be.element, be.bounds, { cancelActivity: true });
+      if (be.bounds) addShape(be.element, be.bounds, { cancelActivity: be.element.cancelActivity !== false });
     }
     for (const edge of graph.edges) {
       if (edge.points) addEdge(edge.element, edge.points);
@@ -95,7 +95,7 @@ export function writeDiagramInterchange(moddle: BpmnModdle, model: LayoutModel, 
   for (const graph of model.graphs) {
     const isHorizontal = options.direction !== 'top-to-bottom';
     if (graph.participant?.bounds) addShape(graph.participant.element, graph.participant.bounds, { isHorizontal });
-    for (const lane of graph.lanes) addShape(lane.element, lane.bounds!, { isHorizontal });
+    for (const lane of graph.lanes) { if (lane.bounds) addShape(lane.element, lane.bounds, { isHorizontal }); }
     emitGraph(graph, isHorizontal);
   }
   for (const edge of model.messageEdges) {

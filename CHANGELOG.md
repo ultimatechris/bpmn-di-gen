@@ -19,4 +19,3 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Security
 
 - Production and development dependencies audited with no known vulnerabilities.
-

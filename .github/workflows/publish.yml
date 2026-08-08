@@ -54,7 +54,3 @@ jobs:
 
       - name: Publish package
         run: npm publish
-        env:
-          # Used only to bootstrap the first release. Once npm trusted publishing
-          # is configured, OIDC is preferred and this secret can be deleted.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

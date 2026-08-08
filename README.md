@@ -142,9 +142,8 @@ npm version patch       # or minor / major
 git push origin master --follow-tags
 ```
 
-The first release uses the short-lived `NPM_TOKEN` repository secret. After the
-package exists on npm, configure `.github/workflows/publish.yml` as its trusted
-GitHub Actions publisher and delete the secret; future tags publish through OIDC.
+Releases use npm Trusted Publishing with GitHub OIDC; no npm token is stored in
+the repository or its Actions secrets.
 
 ## License
 

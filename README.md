@@ -1,5 +1,7 @@
 # bpmn-di-gen
 
+[![CI](https://github.com/ultimatechris/bpmn-di-gen/actions/workflows/ci.yml/badge.svg)](https://github.com/ultimatechris/bpmn-di-gen/actions/workflows/ci.yml)
+
 Add readable layout to BPMN 2.0 files that have none.
 
 BPMN files produced by execution engines, process-mining systems, AI generators,

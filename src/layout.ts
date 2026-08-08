@@ -1,6 +1,8 @@
 import type { LayoutModel, LayoutLane, LayoutNode, LayoutParticipant, ProcessGraph } from './model.js';
 import type { Bounds, LayoutOptions, Point } from './types.js';
+import { assignEdgePorts, outsideStub } from './ports.js';
 import { assignRanks } from './rank.js';
+import { routeOrthogonal, type OccupiedSegment } from './router.js';
 
 interface Spacing {
   rankGap: number;
@@ -9,12 +11,23 @@ interface Spacing {
   paddingY: number;
   laneMinHeight: number;
   poolGap: number;
+  routingClearance: number;
+  edgeSeparation: number;
 }
 
 const SPACING: Record<NonNullable<LayoutOptions['spacing']>, Spacing> = {
-  compact: { rankGap: 70, nodeGap: 25, paddingX: 35, paddingY: 25, laneMinHeight: 110, poolGap: 50 },
-  normal: { rankGap: 110, nodeGap: 40, paddingX: 55, paddingY: 35, laneMinHeight: 140, poolGap: 70 },
-  spacious: { rankGap: 160, nodeGap: 60, paddingX: 80, paddingY: 50, laneMinHeight: 180, poolGap: 100 },
+  compact: {
+    rankGap: 70, nodeGap: 25, paddingX: 35, paddingY: 25, laneMinHeight: 110, poolGap: 50,
+    routingClearance: 8, edgeSeparation: 8,
+  },
+  normal: {
+    rankGap: 110, nodeGap: 40, paddingX: 55, paddingY: 35, laneMinHeight: 140, poolGap: 70,
+    routingClearance: 10, edgeSeparation: 10,
+  },
+  spacious: {
+    rankGap: 160, nodeGap: 60, paddingX: 80, paddingY: 50, laneMinHeight: 180, poolGap: 100,
+    routingClearance: 12, edgeSeparation: 12,
+  },
 };
 
 const POOL_HEADER = 30;
@@ -185,61 +198,113 @@ function deduplicate(points: Point[]): Point[] {
   return points.filter((point, index) => index === 0 || point.x !== points[index - 1].x || point.y !== points[index - 1].y);
 }
 
-function routeSequenceEdges(graph: ProcessGraph): void {
+function expanded(bounds: Bounds, clearance: number): Bounds {
+  return {
+    x: bounds.x - clearance,
+    y: bounds.y - clearance,
+    width: bounds.width + clearance * 2,
+    height: bounds.height + clearance * 2,
+  };
+}
+
+function addOccupiedSegments(edgeId: string, points: Point[], occupied: OccupiedSegment[]): void {
+  for (let index = 1; index < points.length; index += 1) {
+    const start = points[index - 1];
+    const end = points[index];
+    if ((start.x === end.x || start.y === end.y) && (start.x !== end.x || start.y !== end.y)) {
+      const duplicate = occupied.some((segment) => segment.edgeId === edgeId
+        && ((segment.start.x === start.x && segment.start.y === start.y
+          && segment.end.x === end.x && segment.end.y === end.y)
+          || (segment.start.x === end.x && segment.start.y === end.y
+            && segment.end.x === start.x && segment.end.y === start.y)));
+      if (!duplicate) occupied.push({ edgeId, start, end });
+    }
+  }
+}
+
+function horizontalCorridorBlocked(
+  sourceId: string,
+  targetId: string,
+  source: Bounds,
+  target: Bounds,
+  boundsById: Map<string, Bounds>,
+  clearance: number,
+): boolean {
+  const startX = source.x + source.width;
+  const endX = target.x;
+  if (endX <= startX) return false;
+  const y = centerY(source);
+  if (y !== centerY(target)) return false;
+  for (const [id, bounds] of boundsById) {
+    if (id === sourceId || id === targetId) continue;
+    const obstacle = expanded(bounds, clearance);
+    if (y > obstacle.y && y < obstacle.y + obstacle.height
+      && Math.min(endX, obstacle.x + obstacle.width) - Math.max(startX, obstacle.x) > 0) return true;
+  }
+  return false;
+}
+
+function routeSequenceEdges(graph: ProcessGraph, spacing: Spacing): void {
   const boundsById = new Map<string, Bounds>();
   for (const node of graph.nodes) { if (node.bounds) boundsById.set(node.id, node.bounds); }
   for (const be of graph.boundaryEvents) { if (be.bounds) boundsById.set(be.id, be.bounds); }
   const boundaryEventIds = new Set(graph.boundaryEvents.map((be) => be.id));
+  const ports = assignEdgePorts(graph.edges, boundsById, boundaryEventIds, (edge) => {
+    if (boundaryEventIds.has(edge.sourceId)) return ['bottom', edge.backward ? 'top' : 'left'];
+    if (edge.backward) return ['top', 'top'];
+    const source = boundsById.get(edge.sourceId)!;
+    const target = boundsById.get(edge.targetId)!;
+    if (horizontalCorridorBlocked(
+      edge.sourceId,
+      edge.targetId,
+      source,
+      target,
+      boundsById,
+      spacing.routingClearance,
+    )) return ['top', 'top'];
+    return ['right', 'left'];
+  });
+  const obstacles = [...boundsById.values()].map((bounds) => expanded(bounds, spacing.routingClearance));
+  const occupied: OccupiedSegment[] = [];
+  const orderedEdges = [...graph.edges].sort((left, right) => {
+    const leftBoundary = boundaryEventIds.has(left.sourceId) ? 1 : 0;
+    const rightBoundary = boundaryEventIds.has(right.sourceId) ? 1 : 0;
+    const category = Number(left.backward) - Number(right.backward) || leftBoundary - rightBoundary;
+    if (category !== 0) return category;
+    const leftSource = boundsById.get(left.sourceId)!;
+    const leftTarget = boundsById.get(left.targetId)!;
+    const rightSource = boundsById.get(right.sourceId)!;
+    const rightTarget = boundsById.get(right.targetId)!;
+    const leftDistance = Math.abs(centerX(leftTarget) - centerX(leftSource)) + Math.abs(centerY(leftTarget) - centerY(leftSource));
+    const rightDistance = Math.abs(centerX(rightTarget) - centerX(rightSource)) + Math.abs(centerY(rightTarget) - centerY(rightSource));
+    return leftDistance - rightDistance || left.id.localeCompare(right.id);
+  });
 
-  let backwardChannel = 0;
-  const allBounds = [...boundsById.values()];
-  const graphTop = graph.participant?.bounds?.y
-    ?? (graph.lanes.length
-      ? graph.lanes.reduce((minimum, lane) => Math.min(minimum, lane.bounds!.y), Number.POSITIVE_INFINITY)
-      : allBounds.length
-        ? allBounds.reduce((minimum, bounds) => Math.min(minimum, bounds.y), Number.POSITIVE_INFINITY) - 35
-        : 0);
-
-  for (const edge of graph.edges) {
-    const source = boundsById.get(edge.sourceId);
-    const target = boundsById.get(edge.targetId);
-    if (!source || !target) continue;
-
-    if (boundaryEventIds.has(edge.sourceId)) {
-      // Exception flow: exit from bottom of boundary event, route to target
-      const start = { x: centerX(source), y: source.y + source.height };
-      const end = { x: target.x, y: centerY(target) };
-      const midY = Math.max(start.y + 20, end.y);
-      edge.points = deduplicate([start, { x: start.x, y: midY }, { x: end.x, y: midY }, end]);
-      continue;
-    }
-
-    const sourcePoint = { x: source.x + source.width, y: centerY(source) };
-    const targetPoint = { x: target.x, y: centerY(target) };
-    if (!edge.backward) {
-      if (sourcePoint.y === targetPoint.y) {
-        edge.points = [sourcePoint, targetPoint];
-      } else {
-        const middleX = (sourcePoint.x + targetPoint.x) / 2;
-        edge.points = deduplicate([
-          sourcePoint,
-          { x: middleX, y: sourcePoint.y },
-          { x: middleX, y: targetPoint.y },
-          targetPoint,
-        ]);
-      }
-    } else {
-      const channelY = graphTop + 12 + backwardChannel * 8;
-      backwardChannel += 1;
-      edge.points = deduplicate([
-        sourcePoint,
-        { x: sourcePoint.x + 25, y: sourcePoint.y },
-        { x: sourcePoint.x + 25, y: channelY },
-        { x: targetPoint.x - 25, y: channelY },
-        { x: targetPoint.x - 25, y: targetPoint.y },
-        targetPoint,
-      ]);
-    }
+  for (const edge of orderedEdges) {
+    const edgePorts = ports.get(edge.id);
+    if (!edgePorts) continue;
+    const startStub = outsideStub(edgePorts.source, edgePorts.sourceSide, spacing.routingClearance);
+    const endStub = outsideStub(edgePorts.target, edgePorts.targetSide, spacing.routingClearance);
+    edge.points = routeOrthogonal({
+      edgeId: edge.id,
+      startPort: edgePorts.source,
+      endPort: edgePorts.target,
+      startStub,
+      endStub,
+      obstacles,
+      occupiedSegments: occupied,
+      options: {
+        trackSeparation: spacing.edgeSeparation,
+        outerMargin: Math.max(8, spacing.paddingY - spacing.routingClearance),
+        bendCost: spacing.edgeSeparation * 3,
+        // A crossing is undesirable, but it must not justify a diagram-scale detour.
+        // Pricing it at six rank gaps permits a local bypass, not a diagram-scale detour.
+        crossingCost: edge.backward ? 20_000 : spacing.rankGap * 6,
+        overlapCost: 100_000,
+        overlapLengthCost: 200,
+      },
+    });
+    addOccupiedSegments(edge.id, edge.points, occupied);
   }
 }
 
@@ -267,7 +332,25 @@ function endpointBounds(model: LayoutModel, id: string): Bounds | undefined {
   return undefined;
 }
 
-function routeMessageEdges(model: LayoutModel): void {
+function collectGraphRoutingGeometry(
+  graph: ProcessGraph,
+  bounds: Bounds[],
+  occupied: OccupiedSegment[],
+): void {
+  for (const node of graph.nodes) {
+    if (node.bounds) bounds.push(node.bounds);
+    if (node.subGraph) collectGraphRoutingGeometry(node.subGraph, bounds, occupied);
+  }
+  for (const event of graph.boundaryEvents) { if (event.bounds) bounds.push(event.bounds); }
+  for (const annotation of graph.annotations) { if (annotation.bounds) bounds.push(annotation.bounds); }
+  for (const dataElement of graph.dataElements) { if (dataElement.bounds) bounds.push(dataElement.bounds); }
+  for (const edge of [...graph.edges, ...graph.associations, ...graph.dataAssociations]) {
+    if (edge.points) addOccupiedSegments(edge.id, edge.points, occupied);
+  }
+}
+
+function routeMessageEdges(model: LayoutModel, spacing: Spacing): void {
+  const boundsById = new Map<string, Bounds>();
   for (const edge of model.messageEdges) {
     const source = endpointBounds(model, edge.sourceId);
     const target = endpointBounds(model, edge.targetId);
@@ -280,11 +363,65 @@ function routeMessageEdges(model: LayoutModel): void {
       });
       continue;
     }
-    const downward = centerY(target) >= centerY(source);
-    const start = { x: centerX(source), y: downward ? source.y + source.height : source.y };
-    const end = { x: centerX(target), y: downward ? target.y : target.y + target.height };
-    const middleY = (start.y + end.y) / 2;
-    edge.points = deduplicate([start, { x: start.x, y: middleY }, { x: end.x, y: middleY }, end]);
+    boundsById.set(edge.sourceId, source);
+    boundsById.set(edge.targetId, target);
+  }
+
+  const participantIds = new Set([
+    ...model.graphs.flatMap((graph) => graph.participant ? [graph.participant.id] : []),
+    ...model.blackBoxParticipants.map((participant) => participant.id),
+  ]);
+  const ports = assignEdgePorts(model.messageEdges, boundsById, new Set(), (edge) => {
+    const source = boundsById.get(edge.sourceId)!;
+    const target = boundsById.get(edge.targetId)!;
+    return centerY(target) >= centerY(source) ? ['bottom', 'top'] : ['top', 'bottom'];
+  }, participantIds);
+  const rawObstacles: Bounds[] = [];
+  const occupied: OccupiedSegment[] = [];
+  for (const graph of model.graphs) collectGraphRoutingGeometry(graph, rawObstacles, occupied);
+  const obstacles = rawObstacles.map((bounds) => expanded(bounds, spacing.routingClearance));
+  for (const edge of model.messageEdges) {
+    const edgePorts = ports.get(edge.id);
+    if (!edgePorts) continue;
+    const startStub = outsideStub(edgePorts.source, edgePorts.sourceSide, spacing.routingClearance);
+    const endStub = outsideStub(edgePorts.target, edgePorts.targetSide, spacing.routingClearance);
+    if (participantIds.has(edge.sourceId)) addOccupiedSegments(edge.id, [edgePorts.source, startStub], occupied);
+    if (participantIds.has(edge.targetId)) addOccupiedSegments(edge.id, [endStub, edgePorts.target], occupied);
+  }
+  const orderedEdges = [...model.messageEdges].sort((left, right) => {
+    const leftSource = boundsById.get(left.sourceId);
+    const leftTarget = boundsById.get(left.targetId);
+    const rightSource = boundsById.get(right.sourceId);
+    const rightTarget = boundsById.get(right.targetId);
+    if (!leftSource || !leftTarget) return 1;
+    if (!rightSource || !rightTarget) return -1;
+    const leftDistance = Math.abs(centerX(leftTarget) - centerX(leftSource)) + Math.abs(centerY(leftTarget) - centerY(leftSource));
+    const rightDistance = Math.abs(centerX(rightTarget) - centerX(rightSource)) + Math.abs(centerY(rightTarget) - centerY(rightSource));
+    return leftDistance - rightDistance || left.id.localeCompare(right.id);
+  });
+
+  for (const edge of orderedEdges) {
+    const edgePorts = ports.get(edge.id);
+    if (!edgePorts) continue;
+    edge.points = routeOrthogonal({
+      edgeId: edge.id,
+      startPort: edgePorts.source,
+      endPort: edgePorts.target,
+      startStub: outsideStub(edgePorts.source, edgePorts.sourceSide, spacing.routingClearance),
+      endStub: outsideStub(edgePorts.target, edgePorts.targetSide, spacing.routingClearance),
+      obstacles,
+      occupiedSegments: occupied,
+      options: {
+        trackSeparation: spacing.edgeSeparation,
+        outerMargin: Math.max(spacing.poolGap / 2, spacing.routingClearance * 2),
+        bendCost: spacing.edgeSeparation * 3,
+        // Prefer a local crossing over sending a message flow around a whole pool.
+        crossingCost: spacing.rankGap * 6,
+        overlapCost: 100_000,
+        overlapLengthCost: 200,
+      },
+    });
+    addOccupiedSegments(edge.id, edge.points, occupied);
   }
 }
 
@@ -510,9 +647,9 @@ function placeBoundaryEventsDeep(graph: ProcessGraph): void {
 }
 
 function routeDeep(graph: ProcessGraph, spacing: Spacing): void {
-  routeSequenceEdges(graph);
   placeAnnotations(graph, spacing);
   placeDataElements(graph, spacing);
+  routeSequenceEdges(graph, spacing);
   routeAssociations(graph);
   routeDataAssociations(graph);
   placeGroups(graph);
@@ -530,7 +667,7 @@ function refreshAfterBoundsRestore(
   placeAnnotations(graph, spacing, preserve);
   placeDataElements(graph, spacing, preserve);
   placeGroups(graph, preserve);
-  routeSequenceEdges(graph);
+  routeSequenceEdges(graph, spacing);
   routeAssociations(graph);
   routeDataAssociations(graph);
   for (const node of graph.nodes) {
@@ -590,7 +727,7 @@ export function layoutModel(model: LayoutModel, options: LayoutOptions): void {
   for (const graph of model.graphs) placeBoundaryEventsDeep(graph);
   for (const graph of model.graphs) routeDeep(graph, spacing);
   if (options.direction === 'top-to-bottom') applyTopToBottom(model);
-  routeMessageEdges(model);
+  routeMessageEdges(model, spacing);
 }
 
 type ExistingDi = Map<string, { bounds?: Bounds; points?: Point[] }>;
@@ -682,7 +819,7 @@ export function applyDiPolicy(model: LayoutModel, di: ExistingDi, options: Layou
     refreshAfterBoundsRestore(graph, spacing, preserve);
     if (options.direction === 'top-to-bottom') transposeGraph(graph);
   }
-  routeMessageEdges(model);
+  routeMessageEdges(model, spacing);
 
   if (restoreEdges) {
     for (const graph of model.graphs) restoreGraphEdges(graph, di, preserveEdge);

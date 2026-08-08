@@ -89,6 +89,7 @@ const { xml } = await layoutBpmn(xml, {
 - Multiple standalone processes, with a separate diagram plane for each process
 - Pools and lanes, including nested lane sets and empty lanes
 - Collaborations: multiple pools, black-box participants, message flows
+- Obstacle-aware orthogonal routing with separated ports for shared node sides
 - Boundary events attached to activities, with exception-flow routing
 - Expanded subprocesses laid out recursively
 - Text annotations, data objects, data stores, and group artifacts
@@ -130,4 +131,4 @@ npm run test:visual:update
 
 ## License
 
-[AGPL-3.0-only](LICENSE)
+[MIT](LICENSE)

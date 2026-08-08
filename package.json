@@ -50,7 +50,7 @@
     "flowable",
     "activiti"
   ],
-  "license": "AGPL-3.0-only",
+  "license": "MIT",
   "dependencies": {
     "bpmn-moddle": "^9.0.4"
   },

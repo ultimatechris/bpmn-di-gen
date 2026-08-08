@@ -54,13 +54,23 @@ Native BPMN element dimensions are retained when switching direction.
 
 ## Routing
 
-Forward sequence flows leave the right border and enter the left border in the
-default direction. A midpoint channel provides orthogonal routing across lanes.
-Backward flows receive deterministic channels above process content. Duplicate
-waypoints are removed.
+`src/ports.ts` assigns deterministic, separated connection points when several
+flows share a node side. Short forward flows use the natural outgoing and incoming
+sides; blocked same-row flows can leave from the top or bottom instead of crossing
+an intervening node.
 
-Routing is intentionally separate from placement. Future obstacle avoidance and
-message-flow routing can replace this stage without changing semantic analysis.
+`src/router.ts` builds a sparse rectilinear visibility grid around expanded shape
+bounds and searches it with A*. Shape interiors are hard obstacles. Route cost
+combines length and bends with much larger penalties for crossing or sharing an
+already occupied segment. Previously routed sequence flows and participant stubs
+therefore reserve their tracks for subsequent sequence and message flows.
+
+Sequence and message flows use the same obstacle-aware router. Routes are generated
+in a stable order, duplicate waypoints are removed, and top-to-bottom layout reuses
+the same algorithm through coordinate transposition. Crossings can still be
+unavoidable for non-planar graphs or externally pinned geometry, but overlapping
+tracks and paths through unrelated shapes are excluded whenever a valid orthogonal
+route exists.
 
 ## DI Generation
 

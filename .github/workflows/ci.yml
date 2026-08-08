@@ -36,8 +36,11 @@ jobs:
       - name: Install Firefox
         run: npx playwright install firefox
 
-      - name: Run test suite
-        run: npm test
+      - name: Build package
+        run: npm run build
+
+      - name: Run portable test suite
+        run: npm run test:ci
 
       - name: Verify package contents
         run: npm pack --dry-run

@@ -124,7 +124,8 @@ npm test         # build + full test suite
 ```
 
 Visual baselines are committed to `test/visual/`. Regenerate them only after an
-intentional layout change:
+intentional layout change. Their pixel-exact comparison is kept in the local and
+pre-publish suite because browser font rendering differs across hosted CI machines:
 
 ```sh
 npm run setup:test-browser   # once: installs headless Firefox for browser tests

@@ -132,6 +132,20 @@ npm run setup:test-browser   # once: installs headless Firefox for browser tests
 npm run test:visual:update
 ```
 
+## Releasing
+
+Publishing a version tag runs the release checks and publishes to npm from GitHub
+Actions. The tag must exactly match the version in `package.json`:
+
+```sh
+npm version patch       # or minor / major
+git push origin master --follow-tags
+```
+
+The first release uses the short-lived `NPM_TOKEN` repository secret. After the
+package exists on npm, configure `.github/workflows/publish.yml` as its trusted
+GitHub Actions publisher and delete the secret; future tags publish through OIDC.
+
 ## License
 
 [MIT](LICENSE)

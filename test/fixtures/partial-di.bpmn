@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_Partial"
+                  targetNamespace="http://example.com/partial">
+  <bpmn:process id="Process_Partial">
+    <bpmn:startEvent id="Start_Partial" name="Request received" />
+    <bpmn:task id="Task_Partial" name="Review request" />
+    <bpmn:endEvent id="End_Partial" name="Complete" />
+    <bpmn:sequenceFlow id="Flow_StartToTask" sourceRef="Start_Partial" targetRef="Task_Partial" />
+    <bpmn:sequenceFlow id="Flow_TaskToEnd" sourceRef="Task_Partial" targetRef="End_Partial" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_Partial">
+    <bpmndi:BPMNPlane id="Plane_Partial" bpmnElement="Process_Partial">
+      <bpmndi:BPMNShape id="Start_Partial_di" bpmnElement="Start_Partial">
+        <dc:Bounds x="90" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Partial_di" bpmnElement="Task_Partial">
+        <dc:Bounds x="400" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_StartToTask_di" bpmnElement="Flow_StartToTask">
+        <di:waypoint x="126" y="200" />
+        <di:waypoint x="245" y="200" />
+        <di:waypoint x="245" y="175" />
+        <di:waypoint x="400" y="175" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

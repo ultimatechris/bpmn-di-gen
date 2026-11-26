@@ -84,7 +84,7 @@ export function writeDiagramInterchange(moddle: BpmnModdle, model: LayoutModel, 
       }
     }
     for (const be of graph.boundaryEvents) {
-      if (be.bounds) addShape(be.element, be.bounds, { cancelActivity: be.element.cancelActivity !== false });
+      if (be.bounds) addShape(be.element, be.bounds);
     }
     for (const edge of graph.edges) {
       if (edge.points) addEdge(edge.element, edge.points);

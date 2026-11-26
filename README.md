@@ -103,6 +103,8 @@ Semantic elements are preserved even when they are outside the layout subset.
 Recognized unsupported process elements are also reported in `diagnostics`. See
 [docs/support-matrix.md](docs/support-matrix.md) for the full coverage table.
 
+The [roadmap to 1.0](docs/roadmap.md) describes planned releases and their acceptance criteria.
+
 ## Return value
 
 `layoutBpmn` resolves to:

@@ -1,6 +1,10 @@
+import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import BpmnModdle from 'bpmn-moddle';
-import { layoutBpmn } from '../src/index.js';
+import { layoutBpmn, type DiPolicy } from '../src/index.js';
+import type { Bounds, Point } from '../src/types.js';
+
+const directions = ['left-to-right', 'top-to-bottom'] as const;
 
 async function parse(xml: string): Promise<any> {
   return (await new BpmnModdle().fromXML(xml)).rootElement;
@@ -33,6 +37,13 @@ function inside(inner: any, outer: any): boolean {
   return inner.x >= outer.x && inner.y >= outer.y
     && inner.x + inner.width <= outer.x + outer.width
     && inner.y + inner.height <= outer.y + outer.height;
+}
+
+function onBorder({ x, y }: Point, bounds: Bounds): boolean {
+  const right = bounds.x + bounds.width;
+  const bottom = bounds.y + bounds.height;
+  return ((x === bounds.x || x === right) && y >= bounds.y && y <= bottom)
+    || ((y === bounds.y || y === bottom) && x >= bounds.x && x <= right);
 }
 
 const SIMPLE_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
@@ -126,7 +137,7 @@ describe('diPolicy: complete', () => {
     ]);
   });
 
-  it.each(['left-to-right', 'top-to-bottom'] as const)(
+  it.each(directions)(
     'keeps generated shapes clear of saved positions in %s layout',
     async (direction) => {
       const generated = shapeMap(await parse((await layoutBpmn(SIMPLE_BPMN, { direction })).xml));
@@ -141,6 +152,46 @@ describe('diPolicy: complete', () => {
         || added.y >= saved.y + saved.height || added.y + added.height <= saved.y).toBe(true);
     },
   );
+});
+
+describe.each(directions)('partial DI in %s layout', (direction) => {
+  const policies: Array<{ name: string; diPolicy: DiPolicy; pins: string[]; keepsRoute: boolean }> = [
+    { name: 'complete', diPolicy: 'complete', pins: [], keepsRoute: true },
+    { name: 'repair with a pinned shape', diPolicy: 'repair', pins: ['Task_Partial'], keepsRoute: false },
+    {
+      name: 'repair with a pinned shape and route', diPolicy: 'repair',
+      pins: ['Task_Partial', 'Flow_StartToTask'], keepsRoute: true,
+    },
+  ];
+
+  it.each(policies)('handles saved bounds and routes under $name', async ({ diPolicy, pins, keepsRoute }) => {
+    const input = await readFile(new URL('./fixtures/partial-di.bpmn', import.meta.url), 'utf8');
+    const original = await parse(input);
+    const { xml } = await layoutBpmn(input, { direction, diPolicy, pins });
+    const output = await parse(xml);
+    const savedShapes = shapeMap(original);
+    const shapes = shapeMap(output);
+    const edges = edgeMap(output);
+    const savedRoute = edgeMap(original).get('Flow_StartToTask').waypoint;
+    const route = edges.get('Flow_StartToTask').waypoint;
+
+    for (const id of ['Start_Partial', 'Task_Partial']) {
+      expect(shapes.get(id).bounds, id).toEqual(savedShapes.get(id).bounds);
+    }
+    if (keepsRoute) {
+      expect(route).toEqual(savedRoute);
+    } else {
+      expect(route).not.toEqual(savedRoute);
+      expect(route.length).toBeGreaterThanOrEqual(2);
+      expect(onBorder(route[0], shapes.get('Start_Partial').bounds)).toBe(true);
+      expect(onBorder(route.at(-1), shapes.get('Task_Partial').bounds)).toBe(true);
+    }
+
+    const added = edges.get('Flow_TaskToEnd').waypoint;
+    expect(added.length).toBeGreaterThanOrEqual(2);
+    expect(onBorder(added[0], shapes.get('Task_Partial').bounds)).toBe(true);
+    expect(onBorder(added.at(-1), shapes.get('End_Partial').bounds)).toBe(true);
+  });
 });
 
 describe('subprocess expansion', () => {
@@ -167,18 +218,6 @@ describe('subprocess expansion', () => {
 });
 
 describe('diPolicy: repair', () => {
-  it('restores valid shape positions and re-routes all edges', async () => {
-    const result = await layoutBpmn(SIMPLE_BPMN, { diPolicy: 'repair' });
-    const shapes = shapeMap(await parse(result.xml));
-    // Start_P had existing valid DI → preserved
-    expect(shapes.get('Start_P').bounds.x).toBe(999);
-    // End_P had no existing DI → auto-layout position
-    expect(shapes.has('End_P')).toBe(true);
-    // edges must still be present
-    const edges = definitions_edges(await parse(result.xml));
-    expect(edges.map((e: any) => e.bpmnElement.id)).toContain('SF_P1');
-  });
-
   it('replaces invalid (zero/negative) bounds with computed layout', async () => {
     const withInvalidDi = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -227,7 +266,7 @@ describe('pins', () => {
     expectEdgeTouchesSource(edgeMap(definitions).get('SF_P1'), shapes.get('Start_P'));
   });
 
-  it('moves generated subprocess content with a pinned container', async () => {
+  it.each(directions)('moves generated subprocess content with a pinned container in %s layout', async (direction) => {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
       <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
         xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
@@ -244,15 +283,10 @@ describe('pins', () => {
           </bpmndi:BPMNPlane>
         </bpmndi:BPMNDiagram>
       </bpmn:definitions>`;
-    const definitions = await parse((await layoutBpmn(xml, { pins: ['Pinned_Sub'] })).xml);
+    const definitions = await parse((await layoutBpmn(xml, { direction, pins: ['Pinned_Sub'] })).xml);
     const shapes = shapeMap(definitions);
 
     expect(shapes.get('Pinned_Sub').bounds).toMatchObject({ x: 900, y: 700 });
     expect(inside(shapes.get('Generated_Child').bounds, shapes.get('Pinned_Sub').bounds)).toBe(true);
   });
 });
-
-function definitions_edges(definitions: any): any[] {
-  return (definitions.diagrams[0].plane.planeElement ?? [])
-    .filter((e: any) => e.$type === 'bpmndi:BPMNEdge');
-}

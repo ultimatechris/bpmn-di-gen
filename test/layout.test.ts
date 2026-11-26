@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { layoutBpmn } from '../src/index.js';
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
+const directions = ['left-to-right', 'top-to-bottom'] as const;
 
 async function fixture(name: string): Promise<string> {
   return readFile(join(fixtures, name), 'utf8');
@@ -13,6 +14,15 @@ async function fixture(name: string): Promise<string> {
 
 async function parse(xml: string): Promise<any> {
   return (await new BpmnModdle().fromXML(xml)).rootElement;
+}
+
+async function semanticXml(xml: string): Promise<string> {
+  const moddle = new BpmnModdle();
+  const { rootElement, warnings } = await moddle.fromXML(xml);
+  expect(warnings.map((warning) => warning.message)).toEqual([]);
+  // Compare normalized BPMN while allowing layout to replace the diagrams.
+  rootElement.diagrams = [];
+  return (await moddle.toXML(rootElement, { format: true })).xml;
 }
 
 function planeElements(definitions: any): any[] {
@@ -35,6 +45,44 @@ function overlaps(a: any, b: any): boolean {
   return a.x < b.x + b.width && a.x + a.width > b.x
     && a.y < b.y + b.height && a.y + a.height > b.y;
 }
+
+describe.each(directions)('semantic round-trip in %s layout', (direction) => {
+  it.each([
+    'single-process.bpmn',
+    'lanes.bpmn',
+    'nested-lanes.bpmn',
+    'collaboration.bpmn',
+    'subprocess.bpmn',
+    'boundary-events.bpmn',
+    'artifacts.bpmn',
+    'future-constructs.bpmn',
+  ])('preserves the BPMN model in %s', async (name) => {
+    const input = await fixture(name);
+    const { xml } = await layoutBpmn(input, { direction });
+    expect(await semanticXml(xml)).toBe(await semanticXml(input));
+  });
+
+  it.each(['complete', 'repair'] as const)('preserves the BPMN model with partial DI under %s', async (diPolicy) => {
+    const input = await fixture('partial-di.bpmn');
+    const { xml } = await layoutBpmn(input, { direction, diPolicy });
+    expect(await semanticXml(xml)).toBe(await semanticXml(input));
+  });
+
+  it('preserves arbitrary extension elements', async () => {
+    const input = `<?xml version="1.0"?>
+      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        xmlns:vendor="http://example.com/vendor" id="Definitions_Ext" targetNamespace="http://example.com">
+        <bpmn:process id="Process_Ext">
+          <bpmn:extensionElements><vendor:metadata key="value"><vendor:child>text</vendor:child></vendor:metadata></bpmn:extensionElements>
+          <bpmn:startEvent id="Start_Ext" />
+        </bpmn:process>
+      </bpmn:definitions>`;
+    const { xml } = await layoutBpmn(input, { direction });
+    expect(await semanticXml(xml)).toBe(await semanticXml(input));
+    expect(xml).toContain('<vendor:metadata key="value">');
+    expect(xml).toContain('<vendor:child>text</vendor:child>');
+  });
+});
 
 describe('single-process layout', () => {
   it('replaces DI and emits complete deterministic shapes and edges', async () => {
@@ -97,20 +145,6 @@ describe('single-process layout', () => {
       x: target.x + target.width / 2,
       y: target.y,
     });
-  });
-
-  it('preserves arbitrary extension elements', async () => {
-    const input = `<?xml version="1.0"?>
-      <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
-        xmlns:vendor="http://example.com/vendor" id="Definitions_Ext" targetNamespace="http://example.com">
-        <bpmn:process id="Process_Ext">
-          <bpmn:extensionElements><vendor:metadata key="value"><vendor:child>text</vendor:child></vendor:metadata></bpmn:extensionElements>
-          <bpmn:startEvent id="Start_Ext" />
-        </bpmn:process>
-      </bpmn:definitions>`;
-    const result = await layoutBpmn(input);
-    expect(result.xml).toContain('<vendor:metadata key="value">');
-    expect(result.xml).toContain('<vendor:child>text</vendor:child>');
   });
 
   it('lays out disconnected components deterministically without overlaps', async () => {
@@ -486,8 +520,8 @@ describe('expanded subprocesses', () => {
     expect(inside(shapes.get('Sub_Task').bounds, subBounds)).toBe(true);
   });
 
-  it('handles the subprocess fixture with all child elements contained inside', async () => {
-    const result = await layoutBpmn(await fixture('subprocess.bpmn'));
+  it.each(directions)('contains child shapes and routes in %s layout', async (direction) => {
+    const result = await layoutBpmn(await fixture('subprocess.bpmn'), { direction });
     expect(result.diagnostics.filter((d) => d.code === 'UNSUPPORTED_ELEMENT')).toHaveLength(0);
     const definitions = await parse(result.xml);
     const shapes = shapeMap(definitions);
@@ -495,8 +529,14 @@ describe('expanded subprocesses', () => {
     expect(shapes.get('SP1').isExpanded).toBe(true);
     const spBounds = shapes.get('SP1').bounds;
     for (const id of ['SubStart', 'SubTask', 'SubEnd']) {
-      expect(shapes.has(id)).toBe(true);
-      expect(inside(shapes.get(id).bounds, spBounds)).toBe(true);
+      expect(inside(shapes.get(id).bounds, spBounds), id).toBe(true);
+    }
+    for (const id of ['SubFlow1', 'SubFlow2']) {
+      const edge = planeElements(definitions).find((element) => element.bpmnElement.id === id);
+      expect(edge.waypoint.length, id).toBeGreaterThanOrEqual(2);
+      for (const { x, y } of edge.waypoint) {
+        expect(inside({ x, y, width: 0, height: 0 }, spBounds), id).toBe(true);
+      }
     }
   });
 
@@ -557,16 +597,17 @@ describe('groups', () => {
 });
 
 describe('lane-aware layout', () => {
-  it('places every flow node in its semantic lane and sizes the participant', async () => {
-    const result = await layoutBpmn(await fixture('lanes.bpmn'));
+  it.each(directions)('contains all lanes and their flow nodes in %s layout', async (direction) => {
+    const result = await layoutBpmn(await fixture('lanes.bpmn'), { direction });
     expect(result.metrics).toMatchObject({ laneCount: 4, participantCount: 1, shapeCount: 11, edgeCount: 5 });
     const definitions = await parse(result.xml);
     expect(definitions.diagrams[0].plane.bpmnElement.id).toBe('Collaboration_Order');
     const shapes = shapeMap(definitions);
     const participant = shapes.get('Participant_Shop').bounds;
+    const thickness = direction === 'left-to-right' ? 'height' : 'width';
     for (const laneId of ['Lane_Office', 'Lane_Warehouse', 'Lane_Shipping', 'Lane_Empty']) {
       expect(inside(shapes.get(laneId).bounds, participant)).toBe(true);
-      expect(shapes.get(laneId).bounds.height).toBeGreaterThanOrEqual(140);
+      expect(shapes.get(laneId).bounds[thickness], laneId).toBeGreaterThanOrEqual(140);
     }
     const expectedLanes: Record<string, string> = {
       Start: 'Lane_Office', Register: 'Lane_Office', Check: 'Lane_Warehouse', Pack: 'Lane_Warehouse',
@@ -578,15 +619,17 @@ describe('lane-aware layout', () => {
     expect(result.diagnostics).toEqual([]);
   });
 
-  it('supports nested lanes and contains children in the parent lane', async () => {
-    const result = await layoutBpmn(await fixture('nested-lanes.bpmn'));
+  it.each(directions)('contains nested lanes and their flow nodes in %s layout', async (direction) => {
+    const result = await layoutBpmn(await fixture('nested-lanes.bpmn'), { direction });
     expect(result.metrics.laneCount).toBe(3);
     const shapes = shapeMap(await parse(result.xml));
     const parent = shapes.get('Lane_Operations').bounds;
     expect(inside(shapes.get('Lane_Team_A').bounds, parent)).toBe(true);
     expect(inside(shapes.get('Lane_Team_B').bounds, parent)).toBe(true);
+    expect(inside(shapes.get('Start').bounds, shapes.get('Lane_Team_A').bounds)).toBe(true);
     expect(inside(shapes.get('Task_A').bounds, shapes.get('Lane_Team_A').bounds)).toBe(true);
     expect(inside(shapes.get('Task_B').bounds, shapes.get('Lane_Team_B').bounds)).toBe(true);
+    expect(inside(shapes.get('End').bounds, shapes.get('Lane_Team_B').bounds)).toBe(true);
   });
 });
 

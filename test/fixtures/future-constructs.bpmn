@@ -18,7 +18,7 @@
       <bpmn:sequenceFlow id="SubFlow_1" sourceRef="SubStart" targetRef="SubTask" />
       <bpmn:sequenceFlow id="SubFlow_2" sourceRef="SubTask" targetRef="SubEnd" />
     </bpmn:subProcess>
-    <bpmn:boundaryEvent id="Boundary_Timer" attachedToRef="SubProcess_Handle">
+    <bpmn:boundaryEvent id="Boundary_Timer" attachedToRef="SubProcess_Handle" cancelActivity="false">
       <bpmn:timerEventDefinition id="TimerDefinition" />
     </bpmn:boundaryEvent>
     <bpmn:endEvent id="End_Service" />

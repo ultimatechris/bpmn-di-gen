@@ -10,9 +10,10 @@ BPMN constructs. The [support matrix](support-matrix.md) describes current cover
 - The [browser import tests](../test/interoperability.test.ts) cover processes,
   lanes, collaborations with message flows, expanded subprocesses, boundary
   events, and partial DI in both layout directions.
-- Add checks for semantic round-trips, containment, and preserved geometry in
-  both layout directions. For partial DI, cover the differences between
-  `complete` and `repair` when shapes or routes are pinned.
+- The [layout tests](../test/layout.test.ts) verify that the BPMN model survives
+  a round-trip and that lanes and subprocesses contain their contents in both
+  layout directions. The [DI policy tests](../test/di-policy.test.ts) verify
+  saved bounds, rerouted edges, and pinned routes under `complete` and `repair`.
 - Show one before-and-after diagram in the README and link to the input BPMN so
   readers can reproduce it with the CLI.
 

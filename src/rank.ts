@@ -109,18 +109,23 @@ export function assignRanks(nodes: LayoutNode[], edges: LayoutEdge[]): void {
   }
 
   const componentByNode = new Map<string, number>();
+  const offsetByNode = new Map<string, number>();
   components.forEach((component, componentIndex) => {
-    for (const id of component.ids) componentByNode.set(id, componentIndex);
+    component.ids.forEach((id, offset) => {
+      componentByNode.set(id, componentIndex);
+      offsetByNode.set(id, offset);
+    });
   });
-  const outgoing = new Map(components.map((_, componentIndex) => [componentIndex, new Set<number>()]));
+  const outgoing = components.map(() => new Map<number, number>());
   const indegree = new Array(components.length).fill(0) as number[];
   for (const edge of edges) {
     const source = componentByNode.get(edge.sourceId)!;
     const target = componentByNode.get(edge.targetId)!;
-    if (source !== target && !outgoing.get(source)!.has(target)) {
-      outgoing.get(source)!.add(target);
-      indegree[target] += 1;
-    }
+    if (source === target) continue;
+    const previousGap = outgoing[source].get(target);
+    if (previousGap === undefined) indegree[target] += 1;
+    const gap = offsetByNode.get(edge.sourceId)! + 1;
+    outgoing[source].set(target, Math.max(previousGap ?? 0, gap));
   }
 
   const queue: number[] = [];
@@ -129,8 +134,10 @@ export function assignRanks(nodes: LayoutNode[], edges: LayoutEdge[]): void {
   });
   while (queue.length) {
     const current = popReady(queue, components)!;
-    for (const target of [...outgoing.get(current)!].sort((a, b) => components[a].minimumOrder - components[b].minimumOrder)) {
-      components[target].rank = Math.max(components[target].rank, components[current].rank + 1);
+    const targets = [...outgoing[current]].sort(([a], [b]) => components[a].minimumOrder - components[b].minimumOrder);
+    for (const [target, gap] of targets) {
+      const nextRank = components[current].rank + gap;
+      components[target].rank = Math.max(components[target].rank, nextRank);
       indegree[target] -= 1;
       if (indegree[target] === 0) {
         pushReady(queue, target, components);

@@ -125,6 +125,45 @@ describe('diPolicy: complete', () => {
       { x: 333, y: 444 },
     ]);
   });
+
+  it.each(['left-to-right', 'top-to-bottom'] as const)(
+    'keeps generated shapes clear of saved positions in %s layout',
+    async (direction) => {
+      const generated = shapeMap(await parse((await layoutBpmn(SIMPLE_BPMN, { direction })).xml));
+      const { x, y } = generated.get('End_P').bounds;
+      const input = SIMPLE_BPMN.replace('x="1200" y="980"', `x="${x}" y="${y}"`);
+      const shapes = shapeMap(await parse((await layoutBpmn(input, { diPolicy: 'complete', direction })).xml));
+      const saved = shapes.get('Task_P').bounds;
+      const added = shapes.get('End_P').bounds;
+
+      expect(saved).toMatchObject({ x, y, width: 100, height: 80 });
+      expect(added.x >= saved.x + saved.width || added.x + added.width <= saved.x
+        || added.y >= saved.y + saved.height || added.y + added.height <= saved.y).toBe(true);
+    },
+  );
+});
+
+describe('subprocess expansion', () => {
+  it.each([
+    { diPolicy: 'complete', expansion: ' isExpanded="false"' },
+    { diPolicy: 'repair', expansion: '' },
+  ] as const)('preserves a collapsed subprocess under $diPolicy', async ({ diPolicy, expansion }) => {
+    const input = SIMPLE_BPMN.replace('<bpmn:task id="Task_P" name="Work" />',
+      '<bpmn:subProcess id="Task_P" name="Work"><bpmn:task id="Inner" /></bpmn:subProcess>')
+      .replace('bpmnElement="Task_P">', `bpmnElement="Task_P"${expansion}>`);
+    const definitions = await parse((await layoutBpmn(input, { diPolicy })).xml);
+    const shapes = shapeMap(definitions);
+    const subprocess = definitions.rootElements[0].flowElements.find((element: any) => element.id === 'Task_P');
+
+    expect(shapes.get('Task_P').isExpanded).toBe(false);
+    expect(shapes.get('Task_P').bounds).toMatchObject({ x: 1200, y: 980, width: 100, height: 80 });
+    expect(shapes.has('Inner')).toBe(false);
+    expect(subprocess.flowElements.map((element: any) => element.id)).toEqual(['Inner']);
+
+    const fresh = shapeMap(await parse((await layoutBpmn(input)).xml));
+    expect(fresh.get('Task_P').isExpanded).toBe(true);
+    expect(fresh.has('Inner')).toBe(true);
+  });
 });
 
 describe('diPolicy: repair', () => {

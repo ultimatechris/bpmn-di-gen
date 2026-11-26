@@ -1,7 +1,8 @@
-import type { LayoutModel, LayoutLane, LayoutNode, LayoutParticipant, ProcessGraph } from './model.js';
+import type { LayoutBoundaryEvent, LayoutModel, LayoutLane, LayoutNode, LayoutParticipant, ProcessGraph } from './model.js';
 import type { Bounds, LayoutOptions, Point } from './types.js';
 import { assignEdgePorts, outsideStub } from './ports.js';
 import { assignRanks } from './rank.js';
+import type { ExistingDiElement } from './read-di.js';
 import { routeOrthogonal, type OccupiedSegment } from './router.js';
 
 interface Spacing {
@@ -34,6 +35,17 @@ const POOL_HEADER = 30;
 const LANE_HEADER = 30;
 const BLACK_BOX_PARTICIPANT_HEIGHT = 120;
 const SUBPROCESS_PADDING = 40;
+const BOUNDARY_EVENT_GAP = 4;
+
+function boundaryEventsByHost(graph: ProcessGraph): Map<string, LayoutBoundaryEvent[]> {
+  const byHost = new Map<string, LayoutBoundaryEvent[]>();
+  for (const event of graph.boundaryEvents) {
+    const attached = byHost.get(event.hostId) ?? [];
+    attached.push(event);
+    byHost.set(event.hostId, attached);
+  }
+  return byHost;
+}
 
 function descendants(lane: LayoutLane, byId: Map<string, LayoutLane>): LayoutLane[] {
   if (!lane.childIds.length) return [lane];
@@ -63,6 +75,14 @@ function presizeSubprocesses(graph: ProcessGraph, spacing: Spacing): void {
 
 function layoutGraph(graph: ProcessGraph, x: number, y: number, spacing: Spacing): void {
   presizeSubprocesses(graph, spacing);
+  const boundaryEvents = boundaryEventsByHost(graph);
+  for (const node of graph.nodes) {
+    const attached = boundaryEvents.get(node.id);
+    if (attached && attached.length > 1) {
+      const requiredWidth = attached.reduce((width, event) => width + event.width + BOUNDARY_EVENT_GAP, 0);
+      node.width = Math.max(node.width, requiredWidth - BOUNDARY_EVENT_GAP);
+    }
+  }
   const nodeIds = new Set(graph.nodes.map((n) => n.id));
   const rankEdges = graph.edges.filter((e) => nodeIds.has(e.sourceId) && nodeIds.has(e.targetId));
   assignRanks(graph.nodes, rankEdges);
@@ -194,6 +214,11 @@ function centerX(bounds: Bounds): number {
   return bounds.x + bounds.width / 2;
 }
 
+function overlaps(a: Bounds, b: Bounds): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width
+    && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
 function deduplicate(points: Point[]): Point[] {
   return points.filter((point, index) => index === 0 || point.x !== points[index - 1].x || point.y !== points[index - 1].y);
 }
@@ -248,9 +273,19 @@ function routeSequenceEdges(graph: ProcessGraph, spacing: Spacing): void {
   const boundsById = new Map<string, Bounds>();
   for (const node of graph.nodes) { if (node.bounds) boundsById.set(node.id, node.bounds); }
   for (const be of graph.boundaryEvents) { if (be.bounds) boundsById.set(be.id, be.bounds); }
-  const boundaryEventIds = new Set(graph.boundaryEvents.map((be) => be.id));
+  const boundaryHosts = new Map(graph.boundaryEvents.map((event) => [event.id, event.hostId]));
+  const boundaryEventIds = new Set(boundaryHosts.keys());
   const ports = assignEdgePorts(graph.edges, boundsById, boundaryEventIds, (edge) => {
-    if (boundaryEventIds.has(edge.sourceId)) return ['bottom', edge.backward ? 'top' : 'left'];
+    const hostId = boundaryHosts.get(edge.sourceId);
+    if (hostId) {
+      const event = boundsById.get(edge.sourceId)!;
+      const host = boundsById.get(hostId);
+      const targetSide = edge.backward ? 'top' : 'left';
+      if (host && centerY(event) <= host.y) return ['top', targetSide];
+      if (host && centerX(event) <= host.x) return ['left', targetSide];
+      if (host && centerX(event) >= host.x + host.width) return ['right', targetSide];
+      return ['bottom', targetSide];
+    }
     if (edge.backward) return ['top', 'top'];
     const source = boundsById.get(edge.sourceId)!;
     const target = boundsById.get(edge.targetId)!;
@@ -459,10 +494,9 @@ function routeDataAssociations(graph: ProcessGraph): void {
     const nodeBounds = boundsById.get(da.nodeId);
     const dataBounds = boundsById.get(da.dataElementId);
     if (!nodeBounds || !dataBounds) continue;
-    da.points = [
-      { x: centerX(nodeBounds), y: nodeBounds.y },
-      { x: centerX(dataBounds), y: dataBounds.y + dataBounds.height },
-    ];
+    const nodePort = { x: centerX(nodeBounds), y: nodeBounds.y };
+    const dataPort = { x: centerX(dataBounds), y: dataBounds.y + dataBounds.height };
+    da.points = da.direction === 'input' ? [dataPort, nodePort] : [nodePort, dataPort];
   }
 }
 
@@ -513,55 +547,61 @@ function routeAssociations(graph: ProcessGraph): void {
   }
 }
 
+function boundarySlots(host: Bounds, event: LayoutBoundaryEvent, count: number): Bounds[] {
+  const { width, height } = event;
+  const pitchX = width + BOUNDARY_EVENT_GAP;
+  const pitchY = height + BOUNDARY_EVENT_GAP;
+  const across = Math.min(count, Math.max(1, Math.floor((host.width + BOUNDARY_EVENT_GAP) / pitchX)));
+  const down = Math.min(count, Math.max(1, Math.floor((host.height + BOUNDARY_EVENT_GAP) / pitchY)));
+  const xs = Array.from({ length: across }, (_, index) => centerX(host) + (index - (across - 1) / 2) * pitchX);
+  const ys = Array.from({ length: down }, (_, index) => centerY(host) + (index - (down - 1) / 2) * pitchY);
+  return [
+    ...xs.map((x) => ({ x, y: host.y + host.height })),
+    ...xs.map((x) => ({ x, y: host.y })),
+    ...ys.map((y) => ({ x: host.x, y })),
+    ...ys.map((y) => ({ x: host.x + host.width, y })),
+  ].map(({ x, y }) => ({ x: x - width / 2, y: y - height / 2, width, height }));
+}
+
 function placeBoundaryEvents(graph: ProcessGraph, preserve: (id: string) => boolean = () => false): void {
   const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
-  for (const be of graph.boundaryEvents) {
-    if (preserve(be.id)) continue;
-    const host = nodeById.get(be.hostId);
-    if (!host?.bounds) continue;
-    be.bounds = {
-      x: host.bounds.x + host.bounds.width / 2 - be.width / 2,
-      y: host.bounds.y + host.bounds.height - be.height / 2,
-      width: be.width,
-      height: be.height,
-    };
+  for (const [hostId, attached] of boundaryEventsByHost(graph)) {
+    const host = nodeById.get(hostId)?.bounds;
+    if (!host) continue;
+    const occupied = attached.flatMap((event) => preserve(event.id) && event.bounds ? [event.bounds] : []);
+    const slots = boundarySlots(host, attached[0], attached.length);
+    for (const [index, event] of attached.entries()) {
+      if (preserve(event.id)) continue;
+      const slotIndex = slots.findIndex((slot) => occupied.every((bounds) => !overlaps(slot, bounds)));
+      event.bounds = slotIndex >= 0 ? slots.splice(slotIndex, 1)[0] : {
+        x: host.x + host.width * (index + 1) / (attached.length + 1) - event.width / 2,
+        y: host.y + host.height - event.height / 2,
+        width: event.width,
+        height: event.height,
+      };
+      occupied.push(event.bounds);
+    }
   }
 }
 
-function shiftGraph(graph: ProcessGraph, ox: number, oy: number): void {
-  for (const node of graph.nodes) {
-    if (node.bounds) { node.bounds.x += ox; node.bounds.y += oy; }
+function shiftGraph(graph: ProcessGraph, ox: number, oy: number, preserve?: (id: string) => boolean): void {
+  for (const shape of [
+    ...graph.nodes, ...graph.boundaryEvents, ...graph.lanes, ...graph.annotations, ...graph.dataElements, ...graph.groups,
+  ]) {
+    if (shape.bounds && !preserve?.(shape.id)) {
+      shape.bounds.x += ox;
+      shape.bounds.y += oy;
+    }
   }
-  for (const be of graph.boundaryEvents) {
-    if (be.bounds) { be.bounds.x += ox; be.bounds.y += oy; }
-  }
-  for (const lane of graph.lanes) {
-    if (lane.bounds) { lane.bounds.x += ox; lane.bounds.y += oy; }
-  }
-  for (const edge of graph.edges) {
+  for (const edge of [...graph.edges, ...graph.associations, ...graph.dataAssociations]) {
     if (edge.points) edge.points = edge.points.map((p) => ({ x: p.x + ox, y: p.y + oy }));
   }
-  for (const ann of graph.annotations) {
-    if (ann.bounds) { ann.bounds.x += ox; ann.bounds.y += oy; }
-  }
-  for (const assoc of graph.associations) {
-    if (assoc.points) assoc.points = assoc.points.map((p) => ({ x: p.x + ox, y: p.y + oy }));
-  }
-  for (const de of graph.dataElements) {
-    if (de.bounds) { de.bounds.x += ox; de.bounds.y += oy; }
-  }
-  for (const da of graph.dataAssociations) {
-    if (da.points) da.points = da.points.map((p) => ({ x: p.x + ox, y: p.y + oy }));
-  }
-  for (const group of graph.groups) {
-    if (group.bounds) { group.bounds.x += ox; group.bounds.y += oy; }
-  }
 }
 
-function shiftGraphDeep(graph: ProcessGraph, ox: number, oy: number): void {
-  shiftGraph(graph, ox, oy);
+function shiftGraphDeep(graph: ProcessGraph, ox: number, oy: number, preserve?: (id: string) => boolean): void {
+  shiftGraph(graph, ox, oy, preserve);
   for (const node of graph.nodes) {
-    if (node.subGraph) shiftGraphDeep(node.subGraph, ox, oy);
+    if (node.subGraph && !preserve?.(node.id)) shiftGraphDeep(node.subGraph, ox, oy, preserve);
   }
 }
 
@@ -658,11 +698,62 @@ function routeDeep(graph: ProcessGraph, spacing: Spacing): void {
   }
 }
 
+function horizontalAlternatives(bounds: Bounds, obstacles: Bounds[], gap: number): Bounds[] {
+  const row = obstacles.filter((other) => bounds.y < other.y + other.height && other.y < bounds.y + bounds.height)
+    .sort((left, right) => left.x - right.x);
+
+  let after = bounds.x;
+  for (const other of row) {
+    if (after + bounds.width <= other.x) break;
+    if (after < other.x + other.width) after = other.x + other.width + gap;
+  }
+  let before = bounds.x;
+  for (const other of row.reverse()) {
+    if (before + bounds.width > other.x && before < other.x + other.width) before = other.x - bounds.width - gap;
+  }
+  return [{ ...bounds, x: after }, { ...bounds, x: before }];
+}
+
+function separateRestoredNodes(
+  graph: ProcessGraph,
+  spacing: Spacing,
+  preserve: (id: string) => boolean,
+  container?: Bounds,
+): void {
+  const restored = graph.nodes.flatMap((node) => preserve(node.id) ? [node.bounds!] : []);
+  if (!restored.length) return;
+
+  const laneById = new Map(graph.lanes.map((lane) => [lane.id, lane]));
+  const leaves = graph.lanes.filter((lane) => !lane.childIds.length);
+  for (const node of graph.nodes) {
+    const bounds = node.bounds!;
+    if (preserve(node.id) || !restored.some((other) => overlaps(bounds, other))) continue;
+
+    const obstacles = graph.nodes.flatMap((other) => other === node ? [] : [other.bounds!]);
+    const [after, before] = horizontalAlternatives(bounds, obstacles, spacing.nodeGap);
+    const lane = leaves.length ? effectiveLeaf(node, leaves, laneById).bounds : undefined;
+    const area = lane ?? container;
+    let position = after;
+    if (area) {
+      const vertical = horizontalAlternatives(transposeBounds(bounds), obstacles.map(transposeBounds), spacing.nodeGap)
+        .map(transposeBounds);
+      position = [after, before, ...vertical].find((candidate) => (
+        candidate.x >= area.x && candidate.x + candidate.width <= area.x + area.width
+        && candidate.y >= area.y && candidate.y + candidate.height <= area.y + area.height
+      )) ?? after;
+    }
+    node.bounds = position;
+    if (node.subGraph) shiftGraphDeep(node.subGraph, position.x - bounds.x, position.y - bounds.y, preserve);
+  }
+}
+
 function refreshAfterBoundsRestore(
   graph: ProcessGraph,
   spacing: Spacing,
   preserve: (id: string) => boolean,
+  container = graph.participant?.bounds,
 ): void {
+  separateRestoredNodes(graph, spacing, preserve, container);
   placeBoundaryEvents(graph, preserve);
   placeAnnotations(graph, spacing, preserve);
   placeDataElements(graph, spacing, preserve);
@@ -671,7 +762,7 @@ function refreshAfterBoundsRestore(
   routeAssociations(graph);
   routeDataAssociations(graph);
   for (const node of graph.nodes) {
-    if (node.subGraph) refreshAfterBoundsRestore(node.subGraph, spacing, preserve);
+    if (node.subGraph) refreshAfterBoundsRestore(node.subGraph, spacing, preserve, node.bounds);
   }
 }
 
@@ -730,7 +821,7 @@ export function layoutModel(model: LayoutModel, options: LayoutOptions): void {
   routeMessageEdges(model, spacing);
 }
 
-type ExistingDi = Map<string, { bounds?: Bounds; points?: Point[] }>;
+type ExistingDi = ReadonlyMap<string, ExistingDiElement>;
 
 function applyGraphDi(
   graph: ProcessGraph,
@@ -793,12 +884,7 @@ export function applyDiPolicy(model: LayoutModel, di: ExistingDi, options: Layou
   const spacing = SPACING[options.spacing ?? 'normal'];
 
   function preserve(id: string): boolean {
-    if (pins.has(id)) return true;
-    if (policy === 'replace') return false;
-    const entry = di.get(id);
-    if (!entry?.bounds) return false;
-    if (policy === 'repair') return entry.bounds.width > 0 && entry.bounds.height > 0;
-    return true; // complete
+    return (policy !== 'replace' || pins.has(id)) && !!di.get(id)?.bounds;
   }
 
   function preserveEdge(id: string): boolean {

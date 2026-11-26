@@ -309,6 +309,28 @@ describe('multi-pool collaboration', () => {
 });
 
 describe('boundary events', () => {
+  it('separates multiple events along their host border', async () => {
+    const { xml } = await layoutBpmn(`<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+      id="Def_MultipleEvents" targetNamespace="http://example.com">
+      <bpmn:process id="Process_Events">
+        <bpmn:task id="Host" />
+        <bpmn:boundaryEvent id="Error" attachedToRef="Host"><bpmn:errorEventDefinition /></bpmn:boundaryEvent>
+        <bpmn:boundaryEvent id="Timer" attachedToRef="Host"><bpmn:timerEventDefinition /></bpmn:boundaryEvent>
+        <bpmn:boundaryEvent id="Signal" attachedToRef="Host"><bpmn:signalEventDefinition /></bpmn:boundaryEvent>
+      </bpmn:process>
+    </bpmn:definitions>`);
+    const shapes = shapeMap(await parse(xml));
+    const host = shapes.get('Host').bounds;
+    const events = ['Error', 'Timer', 'Signal'].map((id) => shapes.get(id).bounds);
+
+    for (const [index, bounds] of events.entries()) {
+      expect(bounds.y + bounds.height / 2).toBe(host.y + host.height);
+      expect(bounds.x).toBeGreaterThanOrEqual(host.x);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(host.x + host.width);
+      expect(events.slice(0, index).some((other) => overlaps(bounds, other))).toBe(false);
+    }
+  });
+
   it('places boundary event on host border and routes exception flow', async () => {
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
       <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -394,6 +416,11 @@ describe('data elements', () => {
         <bpmn:process id="Proc_Data">
           <bpmn:startEvent id="Start_D" />
           <bpmn:task id="Task_D" name="Save data">
+            <bpmn:property id="InputProperty" />
+            <bpmn:dataInputAssociation id="DIA1">
+              <bpmn:sourceRef>DataRef1</bpmn:sourceRef>
+              <bpmn:targetRef>InputProperty</bpmn:targetRef>
+            </bpmn:dataInputAssociation>
             <bpmn:dataOutputAssociation id="DOA1">
               <bpmn:targetRef>DataRef1</bpmn:targetRef>
             </bpmn:dataOutputAssociation>
@@ -407,12 +434,20 @@ describe('data elements', () => {
       </bpmn:definitions>`;
     const result = await layoutBpmn(xml);
     expect(result.diagnostics.filter((d) => d.code === 'UNSUPPORTED_ELEMENT')).toHaveLength(0);
-    const shapes = shapeMap(await parse(result.xml));
+    const definitions = await parse(result.xml);
+    const shapes = shapeMap(definitions);
     expect(shapes.has('DataRef1')).toBe(true);
     const dataBounds = shapes.get('DataRef1').bounds;
     expect(dataBounds.width).toBeGreaterThan(0);
     expect(dataBounds.height).toBeGreaterThan(0);
     expect(dataBounds.y).toBeGreaterThanOrEqual(0);
+    const taskBounds = shapes.get('Task_D').bounds;
+    const input = planeElements(definitions).find((element) => element.bpmnElement.id === 'DIA1');
+    const output = planeElements(definitions).find((element) => element.bpmnElement.id === 'DOA1');
+    const dataPort = { x: dataBounds.x + dataBounds.width / 2, y: dataBounds.y + dataBounds.height };
+    const taskPort = { x: taskBounds.x + taskBounds.width / 2, y: taskBounds.y };
+    expect(input.waypoint).toMatchObject([dataPort, taskPort]);
+    expect(output.waypoint).toMatchObject([taskPort, dataPort]);
   });
 });
 

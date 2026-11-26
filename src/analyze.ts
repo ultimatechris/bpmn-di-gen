@@ -110,6 +110,7 @@ function buildGraph(
   process: any,
   participant: LayoutParticipant | undefined,
   diagnostics: Diagnostic[],
+  isCollapsed: (id: string) => boolean,
   nestingDepth = 0,
 ): ProcessGraph {
   if (nestingDepth > MAX_NESTING_DEPTH) {
@@ -223,8 +224,8 @@ function buildGraph(
 
   // Recursively build subgraphs for expanded subprocesses
   for (const node of nodes) {
-    if (isType(node.element, 'SubProcess') && node.element.flowElements?.length) {
-      node.subGraph = buildGraph(node.element, undefined, diagnostics, nestingDepth + 1);
+    if (isType(node.element, 'SubProcess') && node.element.flowElements?.length && !isCollapsed(node.id)) {
+      node.subGraph = buildGraph(node.element, undefined, diagnostics, isCollapsed, nestingDepth + 1);
     }
   }
 
@@ -274,7 +275,7 @@ function buildGraph(
   return { process, participant, nodes, edges, lanes, roots, width: 0, height: 0, participantOrder: 0, boundaryEvents, annotations, associations, dataElements, dataAssociations, groups };
 }
 
-export function analyzeDefinitions(definitions: any): LayoutModel {
+export function analyzeDefinitions(definitions: any, isCollapsed: (id: string) => boolean): LayoutModel {
   const diagnostics: Diagnostic[] = [];
   const roots = definitions.rootElements ?? [];
   const processes = roots.filter((element: any) => isType(element, 'Process'));
@@ -305,12 +306,12 @@ export function analyzeDefinitions(definitions: any): LayoutModel {
         });
         return;
       }
-      const graph = buildGraph(process, participant, diagnostics);
+      const graph = buildGraph(process, participant, diagnostics, isCollapsed);
       graph.participantOrder = order;
       graphs.push(graph);
     });
   } else {
-    for (const process of processes) graphs.push(buildGraph(process, undefined, diagnostics));
+    for (const process of processes) graphs.push(buildGraph(process, undefined, diagnostics, isCollapsed));
   }
 
   if (!graphs.length && !blackBoxParticipants.length) {

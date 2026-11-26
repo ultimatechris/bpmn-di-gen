@@ -4,7 +4,7 @@ import { writeDiagramInterchange } from './di.js';
 import { BpmnLayoutError } from './errors.js';
 import { applyDiPolicy, layoutModel } from './layout.js';
 import type { ProcessGraph } from './model.js';
-import { readExistingDi } from './read-di.js';
+import { readExistingDi, type ExistingDiElement } from './read-di.js';
 import type { LayoutMetrics, LayoutOptions, LayoutResult } from './types.js';
 import { validateGeneratedDefinitions } from './validate.js';
 
@@ -125,11 +125,16 @@ export async function layoutBpmn(xml: string, options: LayoutOptions = {}): Prom
   }
 
   const policy = options.diPolicy ?? 'replace';
-  const existingDi = (policy !== 'replace' || (options.pins?.length ?? 0) > 0)
+  const pins = new Set(options.pins);
+  const existingDi = (policy !== 'replace' || pins.size > 0)
     ? readExistingDi(definitions)
-    : new Map();
+    : new Map<string, ExistingDiElement>();
 
-  const model = analyzeDefinitions(definitions);
+  const model = analyzeDefinitions(definitions, (id) => {
+    const shape = existingDi.get(id);
+    if (policy === 'replace') return pins.has(id) && shape?.isExpanded === false;
+    return shape?.isExpanded === false || (!!shape?.bounds && shape.isExpanded === undefined);
+  });
   for (const warning of warnings) {
     model.diagnostics.push({
       severity: 'warning',

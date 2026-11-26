@@ -32,8 +32,10 @@ normalizing the process model.
 
 `src/rank.ts` applies Tarjan's strongly connected component algorithm. Components
 are condensed into a DAG and assigned longest-path ranks in stable source order.
-Nodes inside a cyclic component receive consecutive ranks; edges returning to an
-equal or earlier rank are classified as backward flows.
+Nodes inside a cyclic component receive consecutive ranks. An outgoing edge uses
+its source node's offset within the component to keep downstream nodes ahead of
+their predecessors. Edges returning to an equal or earlier rank are classified
+as backward flows.
 
 This provides deterministic results for cycles while preserving a dominant forward
 direction for the rest of the process.
@@ -50,7 +52,7 @@ rank, with a configured minimum for empty lanes. Parent bounds are the union of
 their direct children.
 
 Node columns use the maximum supported node width plus the selected rank gap.
-Native BPMN element dimensions are retained when switching direction.
+Top-to-bottom layout transposes the coordinates and dimensions of generated shapes.
 
 ## Routing
 
@@ -74,8 +76,9 @@ route exists.
 
 ## DI Generation
 
-`src/di.ts` replaces the document's diagram collection with one generated
-`BPMNDiagram` and `BPMNPlane`. It creates shapes in containment order, then edges.
+`src/di.ts` writes one `BPMNDiagram` and `BPMNPlane` for a collaboration, or one
+pair for each standalone process in a document without a collaboration. It
+creates shapes in containment order, then edges.
 Generated IDs are checked against all semantic and DI IDs to avoid XML ID
 collisions.
 

@@ -76,11 +76,13 @@ three policies:
 | `complete` | Keep valid existing shape positions and edge routes; generate missing DI |
 | `repair` | Keep valid existing shapes; re-route all edges |
 
+`complete` and `repair` keep existing collapsed subprocesses collapsed.
+
 Specific elements can be locked to their current position regardless of policy:
 
 ```ts
 // Re-route everything, but keep Task_Review where it is
-const { xml } = await layoutBpmn(xml, {
+const { xml: repairedXml } = await layoutBpmn(xml, {
   diPolicy: 'repair',
   pins: ['Task_Review'],
 });
@@ -125,8 +127,9 @@ npm test         # build + full test suite
 ```
 
 Visual baselines are committed to `test/visual/`. Regenerate them only after an
-intentional layout change. Their pixel-exact comparison is kept in the local and
-pre-publish suite because browser font rendering differs across hosted CI machines:
+intentional layout change. Local `npm test` compares pixels. CI and the publish
+workflow run `npm run test:ci`, which skips that comparison because browser font
+rendering differs across hosted machines.
 
 ```sh
 npm run setup:test-browser   # once: installs headless Firefox for browser tests

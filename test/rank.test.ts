@@ -26,6 +26,22 @@ function edge(index: number, sourceId: string, targetId: string): LayoutEdge {
 }
 
 describe('rank assignment', () => {
+  it('places a cycle exit after the member that leads to it', () => {
+    const [first, second, third, exit] = [0, 1, 2, 3].map(node);
+    const edges = [
+      edge(0, first.id, second.id),
+      edge(1, second.id, third.id),
+      edge(2, third.id, first.id),
+      edge(3, first.id, exit.id),
+      edge(4, third.id, exit.id),
+    ];
+
+    assignRanks([first, second, third, exit], edges);
+
+    expect(exit.rank).toBe(third.rank + 1);
+    expect(edges.filter((item) => item.backward).map((item) => item.id)).toEqual(['Flow_2']);
+  });
+
   it('handles a deep process without using the JavaScript call stack', () => {
     const nodes = Array.from({ length: 20_000 }, (_, index) => node(index));
     const edges = nodes.slice(1).map((target, index) => edge(index, nodes[index].id, target.id));

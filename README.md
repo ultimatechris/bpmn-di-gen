@@ -50,10 +50,10 @@ console.log(`${metrics.shapeCount} shapes, ${metrics.edgeCount} edges`);
 ### As a CLI
 
 ```sh
-bpmn-di-gen input.bpmn -o output.bpmn
-bpmn-di-gen input.bpmn -o output.bpmn --direction top-to-bottom --spacing compact
-bpmn-di-gen input.bpmn -o output.bpmn --di-policy repair --pins Task_Review,Flow_Approved
-bpmn-di-gen --help
+npx bpmn-di-gen input.bpmn -o output.bpmn
+npx bpmn-di-gen input.bpmn -o output.bpmn --direction top-to-bottom --spacing compact
+npx bpmn-di-gen input.bpmn -o output.bpmn --di-policy repair --pins Task_Review,Flow_Approved
+npx bpmn-di-gen --help
 ```
 
 ## Options
@@ -121,18 +121,21 @@ attached when available.
 
 ## Development
 
+Use an up-to-date Node.js 20, 22, or 24 for development. From a fresh clone,
+install the locked dependencies and Firefox, then run the same test suite as CI.
+
 ```sh
-npm install
-npm test         # build + full test suite
+npm ci
+npm run setup:test-browser
+npm run build
+npm run test:ci
 ```
 
-Visual baselines are committed to `test/visual/`. Regenerate them only after an
-intentional layout change. Local `npm test` compares pixels. CI and the publish
-workflow run `npm run test:ci`, which skips that comparison because browser font
-rendering differs across hosted machines.
+Local `npm test` also compares screenshots against `test/visual/`. Browser font
+rendering varies by machine, so CI and the publish workflow skip the pixel-exact
+comparison. Regenerate the baselines after an intentional layout change.
 
 ```sh
-npm run setup:test-browser   # once: installs headless Firefox for browser tests
 npm run test:visual:update
 ```
 
@@ -148,6 +151,10 @@ git push origin master --follow-tags
 
 Releases use npm Trusted Publishing with GitHub OIDC; no npm token is stored in
 the repository or its Actions secrets.
+
+## Security
+
+See the [security policy](SECURITY.md) for private vulnerability reporting.
 
 ## License
 

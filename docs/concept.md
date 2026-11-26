@@ -1,11 +1,8 @@
-# BPMN DI Auto-Layout
+# BPMN DI Auto-Layout Roadmap
 
-## Implementation Status
-
-Phases 0 through 3 are implemented and verified. The current release provides the
-technical foundation, single-process DI generation, and pool/lane-aware layout
-described below. See `README.md` and `docs/support-matrix.md` for the executable API
-and exact current boundaries.
+This document records the original design and proposed milestones. For the
+current API, CLI, and supported BPMN constructs, see the [README](../README.md)
+and [support matrix](support-matrix.md).
 
 ## Project Idea
 
@@ -367,8 +364,8 @@ const result = await layoutBpmn(xml, options);
 Example CLI usage:
 
 ```sh
-bpmn-di-gen input.bpmn --output layouted.bpmn
-bpmn-di-gen input.bpmn --policy replace --direction left-to-right
+npx bpmn-di-gen input.bpmn --output layouted.bpmn
+npx bpmn-di-gen input.bpmn --output layouted.bpmn --di-policy replace --direction left-to-right
 ```
 
 The API should return diagnostics separately from the XML and should not log or

@@ -103,7 +103,8 @@ Semantic elements are preserved even when they are outside the layout subset.
 Recognized unsupported process elements are also reported in `diagnostics`. See
 [docs/support-matrix.md](docs/support-matrix.md) for the full coverage table.
 
-The [roadmap to 1.0](docs/roadmap.md) describes planned releases and their acceptance criteria.
+The [roadmap to 1.0](https://github.com/ultimatechris/bpmn-di-gen/blob/master/docs/roadmap.md)
+describes planned releases and their acceptance criteria.
 
 ## Return value
 
@@ -156,7 +157,8 @@ the repository or its Actions secrets.
 
 ## Security
 
-See the [security policy](SECURITY.md) for private vulnerability reporting.
+See the [security policy](https://github.com/ultimatechris/bpmn-di-gen/security/policy)
+for private vulnerability reporting.
 
 ## License
 

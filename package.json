@@ -1,6 +1,6 @@
 {
   "name": "bpmn-di-gen",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Generate readable BPMN Diagram Interchange information for BPMN 2.0 XML.",
   "author": "Chris",
   "type": "module",

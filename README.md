@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/ultimatechris/bpmn-di-gen/actions/workflows/ci.yml/badge.svg)](https://github.com/ultimatechris/bpmn-di-gen/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/bpmn-di-gen.svg)](https://www.npmjs.com/package/bpmn-di-gen)
+[![npm downloads over the last 18 months](https://img.shields.io/npm/d18m/bpmn-di-gen?label=npm%20downloads%20%2818m%29)](https://www.npmjs.com/package/bpmn-di-gen)
 
 Add readable layout to BPMN 2.0 files that have none.
 
